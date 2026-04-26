@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>遊戲王卡片查詢</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #1c2128;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --gold: #d4a017;
+      --gold-bright: #f0c040;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', 'Microsoft JhengHei', sans-serif;
+      min-height: 100vh;
+    }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    header {
+      background: var(--surface);
+      border-bottom: 2px solid #2a2000;
+      box-shadow: 0 2px 12px rgba(212,160,23,0.15);
+      padding: 1.25rem 1rem;
+      text-align: center;
+    }
+    h1 {
+      background: linear-gradient(135deg, var(--gold), var(--gold-bright), var(--gold));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      font-size: clamp(1.3rem, 4vw, 1.9rem);
+      letter-spacing: 3px;
+      margin-bottom: 1rem;
+    }
+    .search-row {
+      display: flex;
+      gap: 0.5rem;
+      max-width: 580px;
+      margin: 0 auto;
+    }
+    #searchInput {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      flex: 1;
+      font-size: 1rem;
+      outline: none;
+      padding: 0.6rem 1rem;
+      transition: border-color 0.15s;
+    }
+    #searchInput:focus { border-color: var(--gold); }
+    #searchInput::placeholder { color: var(--muted); }
+    #searchBtn {
+      background: var(--gold);
+      border: none;
+      border-radius: 6px;
+      color: #000;
+      cursor: pointer;
+      font-size: 1rem;
+      font-weight: bold;
+      padding: 0.6rem 1.4rem;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    #searchBtn:hover { background: var(--gold-bright); }
+    #searchBtn:active { transform: scale(0.97); }
+    #ocr-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      cursor: pointer;
+      flex-shrink: 0;
+      font-size: 1.15rem;
+      line-height: 1;
+      padding: 0.6rem 0.75rem;
+      transition: border-color 0.15s;
+    }
+    #ocr-btn:hover { border-color: var(--gold); }
+    #ocr-btn:disabled { cursor: wait; opacity: 0.5; }
+
+    /* ── Main layout ─────────────────────────────────────────── */
+    main {
+      margin: 0 auto;
+      max-width: 1440px;
+      padding: 1.2rem 1rem;
+    }
+    #status {
+      color: var(--muted);
+      font-size: 0.88rem;
+      margin-bottom: 1rem;
+      min-height: 1.4em;
+      text-align: center;
+    }
+    #status.err { color: #ff6b6b; }
+
+    /* ── Card grid ───────────────────────────────────────────── */
+    #results {
+      display: grid;
+      gap: 0.9rem;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    }
+
+    /* ── Individual card ─────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      display: flex;
+      gap: 0.7rem;
+      overflow: hidden;
+      padding: 0.75rem;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .card:hover {
+      box-shadow: 0 4px 18px rgba(212,160,23,0.22);
+      transform: translateY(-2px);
+    }
+
+    /* image column */
+    .card-img {
+      flex-shrink: 0;
+      position: relative;
+    }
+    .card-img img {
+      border-radius: 4px;
+      display: block;
+      height: 118px;
+      object-fit: cover;
+      width: 82px;
+    }
+    .no-img {
+      align-items: center;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--muted);
+      display: none;
+      font-size: 0.68rem;
+      height: 118px;
+      justify-content: center;
+      text-align: center;
+      width: 82px;
+    }
+
+    /* info column */
+    .card-body { flex: 1; min-width: 0; }
+
+    .cn-name {
+      color: var(--gold);
+      font-size: 0.97rem;
+      font-weight: bold;
+      line-height: 1.35;
+      margin-bottom: 0.1rem;
+    }
+    .en-name {
+      color: var(--muted);
+      font-size: 0.75rem;
+      margin-bottom: 0.45rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .jp-tag {
+      background: #1e2d5a;
+      border-radius: 3px;
+      color: #7a9fd4;
+      display: inline-block;
+      font-size: 0.6rem;
+      font-weight: normal;
+      letter-spacing: 0.5px;
+      margin-left: 0.3rem;
+      padding: 0.05rem 0.3rem;
+      vertical-align: middle;
+    }
+
+    /* type badge */
+    .type-badge {
+      border-radius: 3px;
+      color: #fff;
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+      margin-bottom: 0.45rem;
+      padding: 0.12rem 0.45rem;
+    }
+    .ft-normal   { background: #6b4d0e; }
+    .ft-effect   { background: #7a3a0a; }
+    .ft-ritual   { background: #1a3468; }
+    .ft-fusion   { background: #5a2e7a; }
+    .ft-synchro  { background: #5a5a6a; }
+    .ft-xyz      { background: #1a1a38; }
+    .ft-link     { background: #0a3068; }
+    .ft-spell    { background: #0d5a48; }
+    .ft-trap     { background: #5a0d48; }
+    .ft-token    { background: #3a3a3a; }
+    .ft-pendulum { background: #2a5a2a; }
+
+    /* stats row */
+    .stats {
+      display: flex;
+      flex-wrap: wrap;
+      font-size: 0.74rem;
+      gap: 0.25rem 0.45rem;
+      margin-bottom: 0.45rem;
+    }
+    .stat {
+      background: rgba(255,255,255,0.05);
+      border-radius: 3px;
+      color: var(--muted);
+      padding: 0.08rem 0.3rem;
+    }
+    .stat.s-atk { color: #ff9999; }
+    .stat.s-def { color: #9999ff; }
+    .stat.s-link { color: #66ccff; }
+
+    /* ── Filter bar (lives inside header) ───────────────────────── */
+    #filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin: 0.9rem auto 0;
+      max-width: 860px;
+    }
+    .filter-section {
+      align-items: center;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.25rem 0.4rem;
+      padding: 0.4rem 0.65rem;
+    }
+    .filter-label {
+      color: var(--muted);
+      font-size: 0.7rem;
+      letter-spacing: 1px;
+      margin-right: 0.2rem;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .filter-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.25rem;
+    }
+    .chip {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 0.75rem;
+      padding: 0.15rem 0.45rem;
+      transition: all 0.12s;
+      user-select: none;
+    }
+    .chip:hover { border-color: var(--gold); color: var(--text); }
+    .chip.active { background: var(--gold); border-color: var(--gold); color: #000; font-weight: bold; }
+
+    /* ── Modal ───────────────────────────────────────────────────── */
+    #modal-overlay {
+      align-items: center;
+      background: rgba(0,0,0,0.75);
+      display: none;
+      inset: 0;
+      justify-content: center;
+      padding: 1rem;
+      position: fixed;
+      z-index: 100;
+    }
+    #modal-overlay.open { display: flex; }
+    #modal-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      display: flex;
+      gap: 1.2rem;
+      max-height: 90vh;
+      max-width: 680px;
+      overflow-y: auto;
+      padding: 1.2rem;
+      position: relative;
+      width: 100%;
+    }
+    #modal-close {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 1.4rem;
+      line-height: 1;
+      padding: 0.2rem 0.4rem;
+      position: absolute;
+      right: 0.6rem;
+      top: 0.6rem;
+    }
+    #modal-close:hover { color: var(--text); }
+    #modal-img { flex-shrink: 0; }
+    #modal-img img {
+      border-radius: 6px;
+      display: block;
+      height: 200px;
+      object-fit: contain;
+      width: 146px;
+    }
+    #modal-body { flex: 1; min-width: 0; }
+    .modal-tw-name {
+      color: var(--gold);
+      font-size: 1.15rem;
+      font-weight: bold;
+      margin-bottom: 0.2rem;
+    }
+    .modal-en-name {
+      color: var(--muted);
+      font-size: 0.82rem;
+      margin-bottom: 0.6rem;
+    }
+    .modal-badge { margin-bottom: 0.6rem; }
+    .modal-stats {
+      display: flex;
+      flex-wrap: wrap;
+      font-size: 0.82rem;
+      gap: 0.3rem 0.6rem;
+      margin-bottom: 0.8rem;
+    }
+    .modal-desc {
+      color: var(--text);
+      font-size: 0.83rem;
+      line-height: 1.7;
+      white-space: pre-wrap;
+    }
+    @media (max-width: 500px) {
+      #modal-box { flex-direction: column; gap: 0.8rem; }
+      #modal-img img { height: 160px; width: 116px; }
+    }
+
+    /* ── Spinner ─────────────────────────────────────────────── */
+    .spinner {
+      border: 3px solid var(--border);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      display: inline-block;
+      height: 18px;
+      vertical-align: middle;
+      width: 18px;
+      animation: spin 0.7s linear infinite;
+      margin-right: 0.4rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── RWD ─────────────────────────────────────────────────── */
+    @media (max-width: 500px) {
+      #results { grid-template-columns: 1fr; }
+      .card-img img, .no-img { height: 104px; width: 72px; }
+    }
+    @media (min-width: 900px) {
+      #results { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>遊戲王卡片查詢</h1>
+  <div class="search-row">
+    <input type="text" id="searchInput"
+           placeholder="輸入卡名（中文／英文／日文）…"
+           autocomplete="off" autocorrect="off" spellcheck="false">
+    <button id="searchBtn">搜尋</button>
+    <button id="ocr-btn" title="拍照或上傳卡片圖片（OCR 辨識日文卡名）">📷</button>
+    <input type="file" id="ocr-input" accept="image/*" style="display:none">
+  </div>
+  <div id="filter-bar">
+    <div class="filter-section">
+      <div class="filter-label">卡種</div>
+      <div class="filter-chips" id="f-type"></div>
+    </div>
+    <div class="filter-section">
+      <div class="filter-label">屬性</div>
+      <div class="filter-chips" id="f-attr"></div>
+    </div>
+    <div class="filter-section">
+      <div class="filter-label">種族</div>
+      <div class="filter-chips" id="f-race"></div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div id="status"></div>
+  <div id="results"></div>
+</main>
+
+<!-- Modal -->
+<div id="modal-overlay">
+  <div id="modal-box">
+    <button id="modal-close" aria-label="關閉">✕</button>
+    <div id="modal-img">
+      <img id="modal-card-img" src="" alt="">
+    </div>
+    <div id="modal-body">
+      <div class="modal-tw-name" id="modal-tw-name"></div>
+      <div class="modal-en-name" id="modal-en-name"></div>
+      <div class="modal-badge" id="modal-badge"></div>
+      <div class="modal-stats" id="modal-stats"></div>
+      <div class="modal-desc" id="modal-desc"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ─── API endpoints ──────────────────────────────────────────────── */
+const SALIX5  = 'https://salix5.up.railway.app/query/';
+const YGOPRO  = 'https://db.ygoprodeck.com/api/v7/cardinfo.php';
+const YGOCDB  = 'https://ygocdb.com/api/v0/';
+const IMG_SM  = id => `https://images.ygoprodeck.com/images/cards_small/${id}.jpg`;
+
+/* ─── Type bitmasks (from salix5/constant.js) ────────────────────── */
+const T_MONSTER   = 0x1;
+const T_SPELL     = 0x2;
+const T_TRAP      = 0x4;
+const T_NORMAL    = 0x10;
+const T_EFFECT    = 0x20;
+const T_FUSION    = 0x40;
+const T_RITUAL    = 0x80;
+const T_SYNCHRO   = 0x2000;
+const T_TOKEN     = 0x4000;
+const T_QUICKPLAY = 0x10000;
+const T_CONT      = 0x20000;
+const T_EQUIP     = 0x40000;
+const T_FIELD     = 0x80000;
+const T_COUNTER   = 0x100000;
+const T_XYZ       = 0x800000;
+const T_PENDULUM  = 0x1000000;
+const T_LINK      = 0x4000000;
+
+/* ─── Attribute & race maps ──────────────────────────────────────── */
+const ATTR_MAP = {
+  0x01:'地', 0x02:'水', 0x04:'炎', 0x08:'風',
+  0x10:'光', 0x20:'闇', 0x40:'神',
+};
+const RACE_MAP = {
+  0x1:'戰士族',      0x2:'魔法使族',    0x4:'天使族',      0x8:'惡魔族',
+  0x10:'不死族',     0x20:'機械族',     0x40:'水族',       0x80:'炎族',
+  0x100:'岩石族',    0x200:'鳥獸族',    0x400:'植物族',    0x800:'昆蟲族',
+  0x1000:'雷族',     0x2000:'龍族',     0x4000:'獸族',     0x8000:'獸戰士族',
+  0x10000:'恐龍族',  0x20000:'魚族',    0x40000:'海龍族',  0x80000:'爬蟲類族',
+  0x100000:'超能族', 0x200000:'幻神獸族',0x400000:'創造神族',
+  0x800000:'幻龍族', 0x1000000:'電子界族',0x2000000:'幻想魔族',
+};
+
+function getAttr(n) { return ATTR_MAP[n] || ''; }
+function getRace(n) {
+  for (const [k, v] of Object.entries(RACE_MAP)) if (n & +k) return v;
+  return '';
+}
+
+/* ─── Frame key ──────────────────────────────────────────────────── */
+function frameKey(type) {
+  if (!type) return 'effect';
+  if (type & T_SPELL) return 'spell';
+  if (type & T_TRAP)  return 'trap';
+  if (type & T_TOKEN) return 'token';
+  const pend = !!(type & T_PENDULUM);
+  if (type & T_LINK)    return pend ? 'pendulum_effect' : 'link';
+  if (type & T_XYZ)     return pend ? 'pendulum_xyz'    : 'xyz';
+  if (type & T_SYNCHRO) return pend ? 'pendulum_synchro': 'synchro';
+  if (type & T_FUSION)  return pend ? 'pendulum_fusion' : 'fusion';
+  if (type & T_RITUAL)  return 'ritual';
+  if (pend) return (type & T_NORMAL) ? 'pendulum_normal' : 'pendulum_effect';
+  if (type & T_NORMAL)  return 'normal';
+  return 'effect';
+}
+
+/* ─── Badge label ────────────────────────────────────────────────── */
+function badgeLabel(type) {
+  if (!type) return '';
+  if (type & T_SPELL) {
+    if (type & T_QUICKPLAY) return '速攻魔法';
+    if (type & T_CONT)      return '永續魔法';
+    if (type & T_EQUIP)     return '裝備魔法';
+    if (type & T_RITUAL)    return '儀式魔法';
+    if (type & T_FIELD)     return '場地魔法';
+    return '通常魔法';
+  }
+  if (type & T_TRAP) {
+    if (type & T_CONT)    return '永續陷阱';
+    if (type & T_COUNTER) return '反擊陷阱';
+    return '通常陷阱';
+  }
+  if (type & T_TOKEN) return '衍生物';
+  const parts = [];
+  if      (type & T_LINK)    parts.push('連結');
+  else if (type & T_XYZ)     parts.push('超量');
+  else if (type & T_SYNCHRO) parts.push('同步');
+  else if (type & T_FUSION)  parts.push('融合');
+  else if (type & T_RITUAL)  parts.push('儀式');
+  if (type & T_PENDULUM) parts.push('靈擺');
+  parts.push((type & T_NORMAL) ? '通常' : '效果');
+  parts.push('怪獸');
+  return parts.join('/');
+}
+
+/* ─── Frame CSS class ────────────────────────────────────────────── */
+const FRAME_CSS = {
+  normal:'ft-normal', effect:'ft-effect', ritual:'ft-ritual',
+  fusion:'ft-fusion', synchro:'ft-synchro', xyz:'ft-xyz',
+  link:'ft-link', spell:'ft-spell', trap:'ft-trap', token:'ft-token',
+};
+function frameCss(key) {
+  return FRAME_CSS[key] || (key?.startsWith('pendulum') ? 'ft-pendulum' : 'ft-normal');
+}
+
+const PRO_FRAME_LABEL = {
+  normal:'通常怪獸', effect:'效果怪獸', ritual:'儀式怪獸',
+  fusion:'融合怪獸', synchro:'同步怪獸', xyz:'超量怪獸',
+  link:'連結怪獸', spell:'魔法卡', trap:'陷阱卡', token:'衍生物',
+  pendulum_normal:'靈擺/通常怪獸', pendulum_effect:'靈擺/效果怪獸',
+};
+
+/* ─── Language detection ─────────────────────────────────────────── */
+function detectLang(kw) {
+  if (/[぀-ゟ゠-ヿ]/.test(kw)) return 'ja';   // hiragana/katakana
+  if (/[一-鿿]/.test(kw)) return 'zh';                          // CJK (Chinese)
+  return 'en';
+}
+
+/* ─── Fetch helpers ──────────────────────────────────────────────── */
+async function fetchSalix5(kw) {
+  const isChinese = /[一-鿿]/.test(kw);
+  const param = isChinese
+    ? `cardname=${encodeURIComponent(kw)}`
+    : `en_name=${encodeURIComponent(kw)}`;
+  const r = await fetch(`${SALIX5}?${param}`);
+  if (!r.ok) throw new Error(`salix5 ${r.status}`);
+  return r.json();
+}
+
+async function fetchPRO(kw) {
+  const r = await fetch(`${YGOPRO}?fname=${encodeURIComponent(kw)}&num=20&offset=0`);
+  if (!r.ok) throw new Error(`YGOPRODeck ${r.status}`);
+  return r.json();
+}
+
+async function fetchCDB(kw) {
+  const r = await fetch(`${YGOCDB}?search=${encodeURIComponent(kw)}`);
+  if (!r.ok) throw new Error(`YGOCDB ${r.status}`);
+  const data = await r.json();
+  // response can be {result:[...]} or plain [...]
+  return Array.isArray(data?.result) ? data.result
+       : Array.isArray(data)         ? data
+       : [];
+}
+
+/* ─── Merge salix5 + YGOPRODeck results ─────────────────────────── */
+function mergeResults(s5Data, proData) {
+  const s5Map  = {};
+  const proMap = {};
+  const ordered = [];
+
+  if (Array.isArray(s5Data?.result)) {
+    for (const c of s5Data.result) {
+      if (!c?.id) continue;
+      const sid = String(c.id);
+      if (!s5Map[sid]) { s5Map[sid] = c; ordered.push(sid); }
+    }
+  }
+  if (Array.isArray(proData?.data)) {
+    for (const c of proData.data) {
+      const sid = String(c.id);
+      proMap[sid] = c;
+      if (!s5Map[sid]) ordered.push(sid);
+    }
+  }
+
+  const seen = new Set();
+  return ordered
+    .filter(id => { if (seen.has(id)) return false; seen.add(id); return true; })
+    .map(id => ({ id, s5: s5Map[id] || null, pro: proMap[id] || null, cdb: null }));
+}
+
+/* ─── Card metadata (s5 / pro / cdb sources) ────────────────────── */
+function cardMeta(id, s5, pro, cdb) {
+  const src = s5 || cdb;   // salix5 preferred; ygocdb as fallback
+  const twName = s5?.tw_name || '';
+  const jpName = cdb?.jp_name || '';
+  const enName = s5?.ae_name || s5?.en_name || cdb?.en_name || pro?.name || '';
+  const type   = src?.type ?? null;
+  const fkey   = type != null ? frameKey(type) : (pro?.frameType || 'effect');
+  const badge  = type != null ? badgeLabel(type) : (PRO_FRAME_LABEL[pro?.frameType] || '');
+  const fclass = frameCss(fkey);
+  const attr   = src ? getAttr(src.attribute) : (pro?.attribute || '');
+  const race   = src ? getRace(src.race)      : (pro?.race || '');
+  const level  = src?.level ?? pro?.level ?? null;
+  const linkv  = src?.marker ? popcount(src.marker) : (pro?.linkval ?? null);
+  const atk    = src?.atk ?? pro?.atk ?? null;
+  const def    = src?.def ?? pro?.def ?? null;
+  const isSpell = !!(type != null ? (type & T_SPELL) : pro?.frameType === 'spell');
+  const isTrap  = !!(type != null ? (type & T_TRAP)  : pro?.frameType === 'trap');
+  const isLink  = !!(type != null ? (type & T_LINK)  : pro?.frameType === 'link');
+  const desc    = s5?.text?.desc || cdb?.text?.tc || cdb?.text?.sc || pro?.desc || '';
+
+  const chips = [];
+  if (attr) chips.push({cls:'', txt: attr});
+  if (race) chips.push({cls:'', txt: race});
+  if (!isSpell && !isTrap) {
+    if (isLink && linkv != null) chips.push({cls:'s-link', txt:`LINK-${linkv}`});
+    else if (level != null)      chips.push({cls:'',       txt:`★${level}`});
+    if (atk != null) chips.push({cls:'s-atk', txt:`ATK ${atk < 0 ? '?' : atk}`});
+    if (!isLink && def != null) chips.push({cls:'s-def', txt:`DEF ${def < 0 ? '?' : def}`});
+  }
+  return { id, twName, jpName, enName, fkey, badge, fclass, chips, attr, race, desc,
+           fromCdb: !s5 && !!cdb };
+}
+
+/* ─── Render card (compact grid) ─────────────────────────────────── */
+function renderCard(entry) {
+  const { id, s5, pro, cdb } = entry;
+  const m = cardMeta(id, s5, pro, cdb);
+  const primaryName = m.twName || m.jpName || m.enName;
+  if (!primaryName) return '';
+
+  const subName = m.twName
+    ? m.enName
+    : (m.jpName ? m.enName : '');
+
+  const chipsHtml = m.chips.map(c =>
+    `<span class="stat ${c.cls}">${c.txt}</span>`).join('');
+  const jpTag = (m.fromCdb && m.jpName && !m.twName)
+    ? '<span class="jp-tag">JP</span>' : '';
+
+  return `
+<div class="card" data-id="${id}" style="cursor:pointer">
+  <div class="card-img">
+    <img src="${IMG_SM(id)}" alt="${esc(primaryName)}" loading="lazy"
+         onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+    <div class="no-img">無卡圖</div>
+  </div>
+  <div class="card-body">
+    <div class="cn-name">${esc(primaryName)}${jpTag}</div>
+    ${subName ? `<div class="en-name">${esc(subName)}</div>` : ''}
+    ${m.badge  ? `<span class="type-badge ${m.fclass}">${m.badge}</span>` : ''}
+    ${chipsHtml ? `<div class="stats">${chipsHtml}</div>` : ''}
+  </div>
+</div>`;
+}
+
+/* ─── Modal ──────────────────────────────────────────────────────── */
+let cardIndex = {};
+
+function openModal(id) {
+  const entry = cardIndex[id];
+  if (!entry) return;
+  const m = cardMeta(entry.id, entry.s5, entry.pro, entry.cdb);
+  const primaryName = m.twName || m.jpName || m.enName;
+
+  document.getElementById('modal-card-img').src = IMG_SM(id);
+  document.getElementById('modal-card-img').alt = primaryName;
+  document.getElementById('modal-tw-name').textContent = primaryName;
+  document.getElementById('modal-en-name').textContent =
+    m.twName ? m.enName : (m.jpName ? `${m.jpName}　${m.enName}` : m.enName);
+  document.getElementById('modal-badge').innerHTML = m.badge
+    ? `<span class="type-badge ${m.fclass}">${m.badge}</span>` : '';
+  document.getElementById('modal-stats').innerHTML = m.chips.map(c =>
+    `<span class="stat ${c.cls}">${c.txt}</span>`).join('');
+  document.getElementById('modal-desc').textContent = m.desc;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+
+document.getElementById('modal-close').addEventListener('click', closeModal);
+document.getElementById('modal-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function popcount(n) { let c=0; while(n){c+=n&1;n>>>=1;} return c; }
+
+/* ─── Filter state ───────────────────────────────────────────────── */
+let allCards   = [];
+let activeType = null;
+let activeAttr = null;
+let activeRace = null;
+
+const STATIC_TYPES = ['怪獸', '魔法', '陷阱'];
+const STATIC_ATTRS = ['地', '水', '炎', '風', '光', '闇', '神'];
+const STATIC_RACES = Object.values(RACE_MAP);
+
+function cardTypeLabel(entry) {
+  const t = entry.s5?.type ?? entry.cdb?.type;
+  if (t != null) {
+    if (t & T_SPELL) return '魔法';
+    if (t & T_TRAP)  return '陷阱';
+    return '怪獸';
+  }
+  const ft = entry.pro?.frameType || '';
+  if (ft === 'spell') return '魔法';
+  if (ft === 'trap')  return '陷阱';
+  return '怪獸';
+}
+
+function filteredCards() {
+  return allCards.filter(e => {
+    if (activeType && cardTypeLabel(e) !== activeType) return false;
+    if (activeAttr) {
+      const src = e.s5 || e.cdb;
+      const a = src ? getAttr(src.attribute) : (e.pro?.attribute || '');
+      if (a !== activeAttr) return false;
+    }
+    if (activeRace) {
+      const src = e.s5 || e.cdb;
+      const r = src ? getRace(src.race) : (e.pro?.race || '');
+      if (r !== activeRace) return false;
+    }
+    return true;
+  });
+}
+
+function renderResults() {
+  const filtered = filteredCards();
+  document.getElementById('results').innerHTML = filtered.map(renderCard).filter(Boolean).join('');
+  const total = allCards.length;
+  const shown = filtered.length;
+  document.getElementById('status').textContent =
+    shown === total ? `找到 ${total} 張卡片` : `顯示 ${shown} / ${total} 張`;
+}
+
+function makeChips(containerId, values, getCurrent, setter) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = '';
+  const all = document.createElement('span');
+  all.className = 'chip' + (getCurrent() == null ? ' active' : '');
+  all.textContent = '全部';
+  all.onclick = () => { setter(null); refreshAllChips(); renderResults(); };
+  el.appendChild(all);
+  for (const v of values) {
+    const c = document.createElement('span');
+    c.className = 'chip' + (getCurrent() === v ? ' active' : '');
+    c.textContent = v;
+    c.onclick = () => { setter(getCurrent() === v ? null : v); refreshAllChips(); renderResults(); };
+    el.appendChild(c);
+  }
+}
+
+function refreshAllChips() {
+  makeChips('f-type', STATIC_TYPES, () => activeType, v => { activeType = v; });
+  makeChips('f-attr', STATIC_ATTRS, () => activeAttr, v => { activeAttr = v; });
+  makeChips('f-race', STATIC_RACES, () => activeRace, v => { activeRace = v; });
+}
+
+function buildFilterBar() { refreshAllChips(); }
+
+refreshAllChips();
+
+/* ─── Search controller ──────────────────────────────────────────── */
+let lastQuery = '';
+
+async function doSearch(raw) {
+  const kw = raw.trim();
+  if (!kw || kw === lastQuery) return;
+  lastQuery = kw;
+
+  activeType = null; activeAttr = null; activeRace = null;
+  refreshAllChips();
+
+  const statusEl  = document.getElementById('status');
+  const resultsEl = document.getElementById('results');
+  statusEl.className = '';
+  statusEl.innerHTML = '<span class="spinner"></span>搜尋中…';
+  resultsEl.innerHTML = '';
+
+  const lang = detectLang(kw);
+
+  if (lang === 'ja') {
+    let cdbCards = [];
+    try { cdbCards = await fetchCDB(kw); } catch(e) { /* silent */ }
+
+    const seen = new Set();
+    allCards = cdbCards
+      .filter(c => c?.id && !seen.has(String(c.id)) && seen.add(String(c.id)))
+      .slice(0, 30)
+      .map(c => ({ id: String(c.id), s5: null, pro: null, cdb: c }));
+
+  } else {
+    const [s5Res, proRes] = await Promise.allSettled([
+      fetchSalix5(kw),
+      fetchPRO(kw),
+    ]);
+    const s5Data  = s5Res.status  === 'fulfilled' ? s5Res.value  : null;
+    const proData = proRes.status === 'fulfilled' ? proRes.value : null;
+    allCards = mergeResults(s5Data, proData);
+  }
+
+  cardIndex = {};
+  for (const e of allCards) cardIndex[e.id] = e;
+
+  if (!allCards.length) {
+    statusEl.className = 'err';
+    statusEl.textContent = '找不到符合的卡片。';
+    return;
+  }
+
+  statusEl.textContent = '';
+  buildFilterBar();
+  renderResults();
+}
+
+/* ─── OCR ────────────────────────────────────────────────────────── */
+const ocrBtn   = document.getElementById('ocr-btn');
+const ocrInput = document.getElementById('ocr-input');
+
+ocrBtn.addEventListener('click', () => ocrInput.click());
+
+ocrInput.addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = '';
+
+  ocrBtn.disabled = true;
+  const statusEl = document.getElementById('status');
+  statusEl.className = '';
+  statusEl.innerHTML = '<span class="spinner"></span>載入 OCR 引擎（首次約需下載 10–30 MB）…';
+
+  try {
+    if (!window.Tesseract) {
+      await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
+    }
+
+    statusEl.innerHTML = '<span class="spinner"></span>OCR 辨識中… 0%';
+
+    const { data: { text } } = await Tesseract.recognize(file, 'jpn', {
+      logger: m => {
+        if (m.status === 'recognizing text') {
+          statusEl.innerHTML =
+            `<span class="spinner"></span>OCR 辨識中… ${Math.round(m.progress * 100)}%`;
+        }
+      },
+    });
+
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    const name  = lines[0] || text.trim();
+
+    if (!name) {
+      statusEl.className = 'err';
+      statusEl.textContent = '無法辨識文字，請嘗試更清晰的圖片。';
+      return;
+    }
+
+    document.getElementById('searchInput').value = name;
+    statusEl.textContent = `辨識結果：「${name}」`;
+    lastQuery = '';   // force re-search even if same text
+    doSearch(name);
+
+  } catch (err) {
+    statusEl.className = 'err';
+    statusEl.textContent = `OCR 失敗：${err.message}`;
+  } finally {
+    ocrBtn.disabled = false;
+  }
+});
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('無法載入：' + src));
+    document.head.appendChild(s);
+  });
+}
+
+/* ─── Event listeners ────────────────────────────────────────────── */
+document.getElementById('searchBtn').addEventListener('click', () => {
+  doSearch(document.getElementById('searchInput').value);
+});
+document.getElementById('searchInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doSearch(e.target.value);
+});
+document.getElementById('results').addEventListener('click', e => {
+  const card = e.target.closest('.card[data-id]');
+  if (card) openModal(card.dataset.id);
+});
+</script>
+</body>
+</html>

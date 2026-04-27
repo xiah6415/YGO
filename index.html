@@ -299,16 +299,6 @@ async function searchCards(query) {
   return [...byId.values()];
 }
 
-function loadScript(src) {
-  return new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = src;
-    s.onload = resolve;
-    s.onerror = () => reject(new Error('無法載入：' + src));
-    document.head.appendChild(s);
-  });
-}
-
 /* ═══ Components ══════════════════════════════════════════════════ */
 
 function CardImg({ id, w, h, radius=8 }) {
@@ -544,17 +534,13 @@ function App() {
   const [typeF, setTypeF]     = useState('全部');
   const [attrF, setAttrF]     = useState('全部');
   const [raceF, setRaceF]     = useState('全部');
-  const [ocrMsg, setOcrMsg]   = useState(null);
-  const [ocrBusy, setOcrBusy] = useState(false);
   const inputRef = useRef(null);
-  const ocrRef   = useRef(null);
 
   const doSearch = useCallback(async (q) => {
     const t = (q ?? query).trim();
     if (!t) return;
     setLoading(true); setError(null); setAllCards([]);
     setSearched(true); setTypeF('全部'); setAttrF('全部'); setRaceF('全部');
-    setOcrMsg(null);
     try {
       const res = await searchCards(t);
       setAllCards(res);
@@ -562,31 +548,6 @@ function App() {
     } catch { setError('搜尋時發生錯誤'); }
     finally { setLoading(false); }
   }, [query]);
-
-  async function handleOcr(file) {
-    setOcrBusy(true);
-    setOcrMsg('載入 OCR 引擎（首次約需下載 10–30 MB）…');
-    setError(null);
-    try {
-      if (!window.Tesseract) {
-        await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
-      }
-      setOcrMsg('OCR 辨識中… 0%');
-      const { data: { text } } = await window.Tesseract.recognize(file, 'jpn', {
-        logger: m => {
-          if (m.status === 'recognizing text')
-            setOcrMsg(`OCR 辨識中… ${Math.round(m.progress*100)}%`);
-        },
-      });
-      const name = text.split('\n').map(l=>l.trim()).filter(Boolean)[0] || text.trim();
-      if (!name) { setOcrMsg(null); setError('無法辨識文字，請嘗試更清晰的圖片'); return; }
-      setQuery(name);
-      setOcrMsg(`辨識結果：「${name}」`);
-      doSearch(name);
-    } catch (err) {
-      setOcrMsg(null); setError(`OCR 失敗：${err.message}`);
-    } finally { setOcrBusy(false); }
-  }
 
   const availableAttrs = useMemo(() => {
     const s = new Set(allCards.map(c=>c.attrZh).filter(Boolean));
@@ -654,30 +615,13 @@ function App() {
               onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.1)'}
             />
             {query && (
-              <button onClick={()=>{setQuery('');setAllCards([]);setSearched(false);setError(null);setOcrMsg(null);}} style={{
+              <button onClick={()=>{setQuery('');setAllCards([]);setSearched(false);setError(null);}} style={{
                 position:'absolute',right:10,background:'transparent',border:'none',
                 color:'rgba(255,255,255,0.3)',fontSize:16,cursor:'pointer',padding:4,
                 display:'flex',alignItems:'center',
               }}>✕</button>
             )}
           </div>
-          {/* OCR */}
-          <button
-            onClick={()=>ocrRef.current?.click()}
-            disabled={ocrBusy}
-            title="拍照或上傳卡片圖片（OCR 辨識日文卡名）"
-            style={{
-              padding:'11px 12px',borderRadius:12,
-              border:'1px solid rgba(255,255,255,0.1)',
-              background:ocrBusy?'rgba(255,255,255,0.03)':'rgba(255,255,255,0.06)',
-              color:ocrBusy?'rgba(255,255,255,0.3)':'rgba(255,255,255,0.7)',
-              fontSize:16,cursor:ocrBusy?'wait':'pointer',
-              fontFamily:'inherit',transition:'all 0.15s',flexShrink:0,
-              display:'flex',alignItems:'center',
-            }}
-          >{ocrBusy?'⏳':'📷'}</button>
-          <input ref={ocrRef} type="file" accept="image/*" style={{display:'none'}}
-            onChange={e=>{const f=e.target.files[0];if(f){e.target.value='';handleOcr(f);}}} />
           {/* Search */}
           <button
             onClick={()=>doSearch()}
@@ -693,14 +637,6 @@ function App() {
             }}
           >{loading?'…':'搜尋'}</button>
         </div>
-
-        {/* OCR status */}
-        {ocrMsg && (
-          <div style={{padding:'2px 16px 8px',fontSize:12,color:'rgba(212,168,67,0.8)',display:'flex',alignItems:'center',gap:6}}>
-            <span style={{display:'inline-block',width:8,height:8,borderRadius:'50%',border:'2px solid rgba(212,168,67,0.5)',borderTopColor:'transparent',animation:'spin 0.8s linear infinite',flexShrink:0}} />
-            {ocrMsg}
-          </div>
-        )}
 
         {/* Filters */}
         <div style={{display:'flex',flexDirection:'column',gap:10,paddingBottom:10}}>

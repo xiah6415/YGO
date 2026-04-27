@@ -2,7 +2,9 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <title>遊戲王卡片查詢</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
@@ -30,21 +32,25 @@
 html { height: 100%; }
 body {
   min-height: 100%;
+  min-height: -webkit-fill-available;
   background: #06080F;
   font-family: 'Noto Sans TC', 'Inter', sans-serif;
   display: flex;
   justify-content: center;
   overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
 }
 
 #root {
   width: 100%;
   max-width: 480px;
   min-height: 100vh;
+  min-height: -webkit-fill-available;
   background: var(--bg-app);
   position: relative;
   display: flex;
   flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 @media (min-width: 500px) {
@@ -78,8 +84,14 @@ body {
   overflow-x: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
 }
 .hscroll::-webkit-scrollbar { display: none; }
+
+button, input { -webkit-appearance: none; touch-action: manipulation; }
+input[type="number"] { -moz-appearance: textfield; }
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
 </style>
 </head>
 <body>
@@ -382,52 +394,17 @@ async function searchCards(query) {
       byId.set(c.id, c);
     }
   }
-
-  // Enrich English-only cards: re-query salix5 by exact en_name to get TC data
-  const missing = [...byId.values()].filter(c => !c.nameZh && c.nameEn);
-  if (missing.length) {
-    const hits = await Promise.allSettled(
-      missing.slice(0, 15).map(c =>
-        safeFetch(`https://salix5.up.railway.app/query/?en_name=${encodeURIComponent(c.nameEn)}`)
-          .catch(() => null)
-      )
-    );
-    missing.slice(0, 15).forEach((card, i) => {
-      const res = hits[i];
-      if (res.status !== 'fulfilled' || !res.value) return;
-      const match = normArray(res.value).find(
-        x => String(x.id ?? x.passcode ?? x.card_id) === card.id
-      );
-      if (!match) return;
-      const patch = parseCard(match, 'salix');
-      if (patch) byId.set(card.id, {
-        ...card, ...patch,
-        id:         card.id,
-        nameEn:     card.nameEn || patch.nameEn,
-        cid:        patch.cid || card.cid,
-        banStatus:  card.banStatus || patch.banStatus,
-      });
-    });
-  }
-
-  // Batch fetch ban status for cards still missing it (e.g. Chinese search hits salix5 only)
-  const BAN_MAP_BATCH = { 'Forbidden':'禁止', 'Limited':'限制', 'Semi-Limited':'準限制' };
-  const needsBan = [...byId.values()].filter(c => !c.banStatus);
-  if (needsBan.length) {
-    const ids = needsBan.slice(0, 50).map(c => c.id).join(',');
-    const banRaw = await safeFetch(
-      `https://db.ygoprodeck.com/api/v7/cardinfo.php?id=${ids}&misc=yes`
-    ).catch(() => null);
-    for (const r of normArray(banRaw)) {
-      const bs = BAN_MAP_BATCH[r.banlist_info?.ban_ocg] || null;
-      if (!bs) continue;
-      const id = String(r.id ?? r.passcode);
-      const ex = byId.get(id);
-      if (ex) byId.set(id, { ...ex, banStatus: bs });
-    }
-  }
-
   return [...byId.values()];
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('無法載入：' + src));
+    document.head.appendChild(s);
+  });
 }
 
 /* ═══ Components ══════════════════════════════════════════════════ */
@@ -500,6 +477,29 @@ function Stat({ label, val, color }) {
   );
 }
 
+const ATTR_TEXT_COLOR = {
+  '光':'#3A2200','闇':'#fff','炎':'#fff','水':'#fff','地':'#fff','風':'#1A3020','神':'#3A2200',
+};
+
+function AttrBadge({ attrZh, size=22 }) {
+  const av = ATTR_VISUAL[attrZh];
+  if (!av) return null;
+  return (
+    <div style={{
+      width:size, height:size, borderRadius:'50%',
+      background:av.color,
+      display:'flex', alignItems:'center', justifyContent:'center',
+      fontSize:size*0.52, fontWeight:700,
+      color: ATTR_TEXT_COLOR[attrZh] || '#fff',
+      flexShrink:0,
+      boxShadow:`0 0 0 1.5px rgba(255,255,255,0.25), 0 2px 6px ${av.color}66`,
+      userSelect:'none',
+    }}>
+      {attrZh}
+    </div>
+  );
+}
+
 function JpTag() {
   return (
     <span style={{fontSize:9,background:'rgba(30,45,90,0.9)',color:'#7a9fd4',borderRadius:3,padding:'1px 4px',fontWeight:600,flexShrink:0,letterSpacing:'0.04em'}}>
@@ -539,7 +539,7 @@ function CardRow({ card, onClick, delay }) {
             </div>
             {subName && <div style={{fontSize:11,color:'rgba(255,255,255,0.3)',marginTop:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{subName}</div>}
           </div>
-          {av && <span style={{fontSize:13,flexShrink:0,opacity:0.85}}>{av.icon}</span>}
+          {card.attrZh && <AttrBadge attrZh={card.attrZh} size={22} />}
         </div>
         <TypePill typeLabels={card.typeLabels} />
         <div style={{display:'flex',gap:4,flexWrap:'wrap',marginTop:1}}>
@@ -606,11 +606,10 @@ function Sheet({ card, onClose }) {
               </div>
               {subName && <div style={{fontSize:12,color:'rgba(255,255,255,0.35)',marginTop:3,lineHeight:1.4}}>{subName}</div>}
             </div>
-            <TypePill typeLabels={card.typeLabels} />
+            <TypePill typeZh={card.typeZh} />
             {av && (
               <div style={{display:'flex',alignItems:'center',gap:6}}>
-                <span style={{fontSize:16}}>{av.icon}</span>
-                <span style={{fontSize:13,color:av.color,fontWeight:600}}>{card.attrZh}</span>
+                <AttrBadge attrZh={card.attrZh} size={26} />
                 {card.raceZh && <><span style={{color:'rgba(255,255,255,0.3)',fontSize:12}}>·</span><span style={{fontSize:12,color:'rgba(255,255,255,0.5)'}}>{card.raceZh}</span></>}
               </div>
             )}
@@ -679,7 +678,7 @@ function Sheet({ card, onClose }) {
   );
 }
 
-function FilterChips({ label, options, value, onChange, colorFn }) {
+function FilterChips({ label, options, value, onChange, colorFn, renderLabel }) {
   return (
     <div>
       <div style={{fontSize:10,color:'rgba(255,255,255,0.3)',letterSpacing:'0.08em',fontWeight:600,padding:'0 16px',marginBottom:6}}>{label}</div>
@@ -689,18 +688,42 @@ function FilterChips({ label, options, value, onChange, colorFn }) {
           const col = colorFn ? colorFn(o) : null;
           return (
             <button key={o} onClick={() => onChange(o)} style={{
-              minHeight:44,
-              padding:'0 16px',borderRadius:99,
+              padding:'7px 14px',borderRadius:99,
               border: active ? `1px solid ${col||'rgba(212,168,67,0.6)'}` : '1px solid rgba(255,255,255,0.08)',
               background: active ? (col?`${col}22`:'rgba(212,168,67,0.12)') : 'rgba(255,255,255,0.04)',
               color: active ? (col||'#D4A843') : 'rgba(255,255,255,0.45)',
               fontSize:13,fontWeight:active?600:400,
               cursor:'pointer',fontFamily:'inherit',
               transition:'all 0.15s',whiteSpace:'nowrap',flexShrink:0,
-              display:'flex',alignItems:'center',
             }}>{o}</button>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function RangeFilter({ label, min, max, onMin, onMax }) {
+  const inputStyle = {
+    width:80, padding:'6px 8px', borderRadius:8,
+    border:'1px solid rgba(255,255,255,0.1)',
+    background:'rgba(255,255,255,0.06)',
+    color:'rgba(255,255,255,0.9)', fontSize:12,
+    fontFamily:'inherit', outline:'none',
+  };
+  return (
+    <div style={{padding:'0 16px'}}>
+      <div style={{fontSize:10,color:'rgba(255,255,255,0.3)',letterSpacing:'0.08em',fontWeight:600,marginBottom:6}}>{label}</div>
+      <div style={{display:'flex',alignItems:'center',gap:6}}>
+        <input type="number" placeholder="最小" value={min} onChange={e=>onMin(e.target.value)}
+          style={inputStyle}
+          onFocus={e=>e.target.style.borderColor='rgba(212,168,67,0.5)'}
+          onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.1)'} />
+        <span style={{color:'rgba(255,255,255,0.3)',fontSize:12}}>—</span>
+        <input type="number" placeholder="最大" value={max} onChange={e=>onMax(e.target.value)}
+          style={inputStyle}
+          onFocus={e=>e.target.style.borderColor='rgba(212,168,67,0.5)'}
+          onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.1)'} />
       </div>
     </div>
   );
@@ -730,21 +753,21 @@ function App() {
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState(null);
   const [searched, setSearched] = useState(false);
-  const [sheet, setSheet]       = useState(null);
-  const [typeF, setTypeF]       = useState('全部');
-  const [subTypeF, setSubTypeF] = useState('全部');
-  const [attrF, setAttrF]       = useState('全部');
-  const [raceF, setRaceF]       = useState('全部');
-  const [filtersOpen, setFiltersOpen] = useState(true);
+  const [sheet, setSheet]     = useState(null);
+  const [typeF, setTypeF]     = useState('全部');
+  const [attrF, setAttrF]     = useState('全部');
+  const [raceF, setRaceF]     = useState('全部');
+  const [ocrMsg, setOcrMsg]   = useState(null);
+  const [ocrBusy, setOcrBusy] = useState(false);
   const inputRef = useRef(null);
-
-  const resetFilters = () => { setTypeF('全部'); setSubTypeF('全部'); setAttrF('全部'); setRaceF('全部'); };
+  const ocrRef   = useRef(null);
 
   const doSearch = useCallback(async (q) => {
     const t = (q ?? query).trim();
     if (!t) return;
     setLoading(true); setError(null); setAllCards([]);
-    setSearched(true); resetFilters();
+    setSearched(true); setTypeF('全部'); setAttrF('全部'); setRaceF('全部');
+    setOcrMsg(null);
     try {
       const res = await searchCards(t);
       setAllCards(res);
@@ -754,7 +777,31 @@ function App() {
     finally { setLoading(false); }
   }, [query]);
 
-  /* ── Available filter options ── */
+  async function handleOcr(file) {
+    setOcrBusy(true);
+    setOcrMsg('載入 OCR 引擎（首次約需下載 10–30 MB）…');
+    setError(null);
+    try {
+      if (!window.Tesseract) {
+        await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
+      }
+      setOcrMsg('OCR 辨識中… 0%');
+      const { data: { text } } = await window.Tesseract.recognize(file, 'jpn', {
+        logger: m => {
+          if (m.status === 'recognizing text')
+            setOcrMsg(`OCR 辨識中… ${Math.round(m.progress*100)}%`);
+        },
+      });
+      const name = text.split('\n').map(l=>l.trim()).filter(Boolean)[0] || text.trim();
+      if (!name) { setOcrMsg(null); setError('無法辨識文字，請嘗試更清晰的圖片'); return; }
+      setQuery(name);
+      setOcrMsg(`辨識結果：「${name}」`);
+      doSearch(name);
+    } catch (err) {
+      setOcrMsg(null); setError(`OCR 失敗：${err.message}`);
+    } finally { setOcrBusy(false); }
+  }
+
   const availableAttrs = useMemo(() => {
     const s = new Set(allCards.map(c=>c.attrZh).filter(Boolean));
     return ALL_ATTRS.filter(a => s.has(a));
@@ -790,7 +837,8 @@ function App() {
   [searched, availableAttrs]);
   const raceOptions  = useMemo(() => ['全部',...availableRaces], [availableRaces]);
 
-  /* ── Filtered results ── */
+  const raceOptions = useMemo(() => ['全部',...availableRaces], [availableRaces]);
+
   const filtered = useMemo(() => allCards.filter(c => {
     const isM = c.typeZh && !['魔法卡','陷阱卡','衍生物','技能卡'].includes(c.typeZh);
     if (typeF==='怪獸' && !isM) return false;
@@ -798,15 +846,8 @@ function App() {
     if (typeF==='陷阱' && c.typeZh!=='陷阱卡') return false;
     if (attrF!=='全部' && c.attrZh!==attrF) return false;
     if (raceF!=='全部' && c.raceZh!==raceF) return false;
-    if (subTypeF !== '全部') {
-      if (typeF==='魔法' || typeF==='陷阱') {
-        if (c.subTypeZh !== subTypeF) return false;
-      } else if (typeF==='怪獸') {
-        if (c.typeZh?.replace('怪獸','') !== subTypeF) return false;
-      }
-    }
     return true;
-  }), [allCards, typeF, subTypeF, attrF, raceF]);
+  }), [allCards, typeF, attrF, raceF]);
 
   const hasFilter = typeF!=='全部' || subTypeF!=='全部' || attrF!=='全部' || raceF!=='全部';
   const suggestions = ['青眼白龍','黑魔術師','Blue-Eyes','Dark Magician','Dragon'];
@@ -838,6 +879,11 @@ function App() {
               onChange={e=>setQuery(e.target.value)}
               onKeyDown={e=>e.key==='Enter'&&doSearch()}
               placeholder="輸入卡名（中文／英文／日文）…"
+              inputMode="search"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck="false"
               style={{
                 width:'100%',minHeight:48,padding:'0 12px 0 38px',
                 borderRadius:12,border:'1px solid rgba(255,255,255,0.1)',
@@ -849,12 +895,10 @@ function App() {
               onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.1)'}
             />
             {query && (
-              <button onClick={()=>{setQuery('');setAllCards([]);setSearched(false);setError(null);}} style={{
-                position:'absolute',right:0,
-                minWidth:44,minHeight:48,
-                background:'transparent',border:'none',
-                color:'rgba(255,255,255,0.3)',fontSize:16,cursor:'pointer',
-                display:'flex',alignItems:'center',justifyContent:'center',
+              <button onClick={()=>{setQuery('');setAllCards([]);setSearched(false);setError(null);setOcrMsg(null);}} style={{
+                position:'absolute',right:10,background:'transparent',border:'none',
+                color:'rgba(255,255,255,0.3)',fontSize:16,cursor:'pointer',padding:4,
+                display:'flex',alignItems:'center',
               }}>✕</button>
             )}
           </div>
@@ -874,51 +918,21 @@ function App() {
           >{loading?'…':'搜尋'}</button>
         </div>
 
-        {/* Filters */}
-        <div>
-          {/* Toggle bar */}
-          <button onClick={() => setFiltersOpen(o => !o)} style={{
-            width:'100%',display:'flex',alignItems:'center',gap:8,
-            padding:'4px 16px 8px',background:'transparent',border:'none',cursor:'pointer',
-            fontFamily:'inherit',
-          }}>
-            <span style={{fontSize:10,color:'rgba(255,255,255,0.3)',letterSpacing:'0.08em',fontWeight:600}}>篩選</span>
-            {hasFilter && (
-              <span style={{display:'flex',gap:4,flex:1,flexWrap:'wrap'}}>
-                {typeF!=='全部' && <span style={{fontSize:10,color:TYPE_GROUP_COLOR[typeF]||'#D4A843',fontWeight:600}}>{typeF}</span>}
-                {subTypeF!=='全部' && <span style={{fontSize:10,color:'rgba(212,168,67,0.7)',fontWeight:600}}>· {subTypeF}</span>}
-                {attrF!=='全部' && <span style={{fontSize:10,color:ATTR_VISUAL[attrF]?.color||'rgba(255,255,255,0.5)',fontWeight:600}}>· {attrF}</span>}
-                {raceF!=='全部' && <span style={{fontSize:10,color:'rgba(255,255,255,0.5)',fontWeight:600}}>· {raceF}</span>}
-              </span>
-            )}
-            {!hasFilter && <span style={{flex:1}} />}
-            <span style={{fontSize:9,color:'rgba(255,255,255,0.2)',transition:'transform 0.2s',display:'inline-block',transform:filtersOpen?'rotate(180deg)':'rotate(0deg)'}}>▲</span>
-          </button>
+        {/* OCR status */}
+        {ocrMsg && (
+          <div style={{padding:'2px 16px 8px',fontSize:12,color:'rgba(212,168,67,0.8)',display:'flex',alignItems:'center',gap:6}}>
+            <span style={{display:'inline-block',width:8,height:8,borderRadius:'50%',border:'2px solid rgba(212,168,67,0.5)',borderTopColor:'transparent',animation:'spin 0.8s linear infinite',flexShrink:0}} />
+            {ocrMsg}
+          </div>
+        )}
 
-          {/* Chips */}
-          {filtersOpen && (
-            <div style={{display:'flex',flexDirection:'column',gap:10,paddingBottom:10}}>
-              <FilterChips label="卡種" options={TYPE_GROUPS} value={typeF}
-                onChange={v => { setTypeF(v); setSubTypeF('全部'); }}
-                colorFn={o => TYPE_GROUP_COLOR[o]} />
-              {searched && typeF==='怪獸' && availableMonsterSubs.length > 1 && (
-                <FilterChips label="怪獸類型" options={['全部',...availableMonsterSubs]} value={subTypeF}
-                  onChange={setSubTypeF} colorFn={o => MONSTER_SUB_COLOR[o]} />
-              )}
-              {searched && typeF==='魔法' && availableSpellSubs.length > 1 && (
-                <FilterChips label="魔法類型" options={['全部',...availableSpellSubs]} value={subTypeF}
-                  onChange={setSubTypeF} colorFn={o => SPELL_SUB_COLOR[o]} />
-              )}
-              {searched && typeF==='陷阱' && availableTrapSubs.length > 1 && (
-                <FilterChips label="陷阱類型" options={['全部',...availableTrapSubs]} value={subTypeF}
-                  onChange={setSubTypeF} colorFn={o => TRAP_SUB_COLOR[o]} />
-              )}
-              <FilterChips label="屬性" options={attrOptions} value={attrF} onChange={setAttrF}
-                colorFn={o => ATTR_VISUAL[o]?.color} />
-              {searched && availableRaces.length > 1 && (
-                <FilterChips label="種族" options={raceOptions} value={raceF} onChange={setRaceF} />
-              )}
-            </div>
+        {/* Filters */}
+        <div style={{display:'flex',flexDirection:'column',gap:10,paddingBottom:10}}>
+          <FilterChips label="卡種" options={TYPE_GROUPS} value={typeF} onChange={setTypeF} />
+          <FilterChips label="屬性" options={attrOptions} value={attrF} onChange={setAttrF}
+            colorFn={o => ATTR_VISUAL[o]?.color} />
+          {searched && availableRaces.length>1 && (
+            <FilterChips label="種族" options={raceOptions} value={raceF} onChange={setRaceF} />
           )}
         </div>
       </div>
@@ -964,14 +978,10 @@ function App() {
                 <> · 顯示 <span style={{color:'#D4A843',fontWeight:600}}>{filtered.length}</span> 張</>
               )}
             </span>
-            {hasFilter && (
-              <button onClick={resetFilters} style={{
-                minHeight:36,padding:'0 12px',borderRadius:99,
-                border:'1px solid rgba(212,168,67,0.3)',
-                background:'rgba(212,168,67,0.08)',
-                color:'rgba(212,168,67,0.7)',
-                fontSize:11,cursor:'pointer',fontFamily:'inherit',
-                display:'flex',alignItems:'center',
+            {(typeF!=='全部'||attrF!=='全部'||raceF!=='全部') && (
+              <button onClick={()=>{setTypeF('全部');setAttrF('全部');setRaceF('全部');}} style={{
+                background:'transparent',border:'none',color:'rgba(212,168,67,0.6)',
+                fontSize:11,cursor:'pointer',fontFamily:'inherit',padding:0,
               }}>清除篩選</button>
             )}
           </div>

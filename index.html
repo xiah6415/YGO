@@ -534,13 +534,19 @@ function App() {
   const [typeF, setTypeF]     = useState('全部');
   const [attrF, setAttrF]     = useState('全部');
   const [raceF, setRaceF]     = useState('全部');
+  const [levelF, setLevelF]   = useState('全部');
+  const [subTypeF, setSubTypeF] = useState('全部');
+  const [filtersOpen, setFiltersOpen] = useState(true);
   const inputRef = useRef(null);
+
+  const clearFilters = () => { setTypeF('全部'); setAttrF('全部'); setRaceF('全部'); setLevelF('全部'); setSubTypeF('全部'); };
 
   const doSearch = useCallback(async (q) => {
     const t = (q ?? query).trim();
     if (!t) return;
     setLoading(true); setError(null); setAllCards([]);
-    setSearched(true); setTypeF('全部'); setAttrF('全部'); setRaceF('全部');
+    setSearched(true); setFiltersOpen(true);
+    setTypeF('全部'); setAttrF('全部'); setRaceF('全部'); setLevelF('全部'); setSubTypeF('全部');
     try {
       const res = await searchCards(t);
       setAllCards(res);
@@ -565,6 +571,21 @@ function App() {
 
   const raceOptions = useMemo(() => ['全部',...availableRaces], [availableRaces]);
 
+  const MONSTER_TYPES = ['通常怪獸','效果怪獸','融合怪獸','同步怪獸','超量怪獸','連結怪獸','儀式怪獸','靈擺怪獸'];
+  const availableSubTypes = useMemo(() => {
+    if (typeF !== '怪獸') return [];
+    const s = new Set(allCards.map(c=>c.typeZh).filter(t=>MONSTER_TYPES.includes(t)));
+    return MONSTER_TYPES.filter(t=>s.has(t));
+  }, [allCards, typeF]);
+
+  const availableLevels = useMemo(() => {
+    const s = new Set(allCards.filter(c=>{
+      const isM = c.typeZh && !['魔法卡','陷阱卡','衍生物','技能卡'].includes(c.typeZh);
+      return isM && c.level !== null;
+    }).map(c=>c.level));
+    return [...s].sort((a,b)=>a-b);
+  }, [allCards]);
+
   const filtered = useMemo(() => allCards.filter(c => {
     const isM = c.typeZh && !['魔法卡','陷阱卡','衍生物','技能卡'].includes(c.typeZh);
     if (typeF==='怪獸' && !isM) return false;
@@ -572,8 +593,10 @@ function App() {
     if (typeF==='陷阱' && c.typeZh!=='陷阱卡') return false;
     if (attrF!=='全部' && c.attrZh!==attrF) return false;
     if (raceF!=='全部' && c.raceZh!==raceF) return false;
+    if (subTypeF!=='全部' && c.typeZh!==subTypeF) return false;
+    if (levelF!=='全部' && c.level!==levelF) return false;
     return true;
-  }), [allCards, typeF, attrF, raceF]);
+  }), [allCards, typeF, attrF, raceF, subTypeF, levelF]);
 
   const suggestions = ['青眼白龍','黑魔術師','Blue-Eyes','Dark Magician','Dragon'];
 
@@ -639,12 +662,33 @@ function App() {
         </div>
 
         {/* Filters */}
-        <div style={{display:'flex',flexDirection:'column',gap:10,paddingBottom:10}}>
-          <FilterChips label="卡種" options={TYPE_GROUPS} value={typeF} onChange={setTypeF} />
-          <FilterChips label="屬性" options={attrOptions} value={attrF} onChange={setAttrF}
-            colorFn={o => ATTR_VISUAL[o]?.color} />
-          {searched && availableRaces.length>1 && (
-            <FilterChips label="種族" options={raceOptions} value={raceF} onChange={setRaceF} />
+        <div>
+          {/* Filter toggle bar */}
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 16px 6px'}}>
+            <span style={{fontSize:10,color:'rgba(255,255,255,0.3)',letterSpacing:'0.08em',fontWeight:600}}>篩選</span>
+            <button onClick={()=>setFiltersOpen(o=>!o)} style={{
+              background:'transparent',border:'none',cursor:'pointer',
+              color:'rgba(255,255,255,0.3)',fontSize:12,padding:'2px 6px',
+              display:'flex',alignItems:'center',gap:4,fontFamily:'inherit',
+            }}>
+              {filtersOpen ? '收合 ▲' : '展開 ▼'}
+            </button>
+          </div>
+          {filtersOpen && (
+            <div style={{display:'flex',flexDirection:'column',gap:10,paddingBottom:10}}>
+              <FilterChips label="卡種" options={TYPE_GROUPS} value={typeF} onChange={v=>{setTypeF(v);setSubTypeF('全部');setLevelF('全部');}} />
+              <FilterChips label="屬性" options={attrOptions} value={attrF} onChange={setAttrF}
+                colorFn={o => ATTR_VISUAL[o]?.color} />
+              {searched && availableRaces.length>1 && (
+                <FilterChips label="種族" options={raceOptions} value={raceF} onChange={setRaceF} />
+              )}
+              {typeF==='怪獸' && availableSubTypes.length>1 && (
+                <FilterChips label="怪獸類型" options={['全部',...availableSubTypes]} value={subTypeF} onChange={setSubTypeF} />
+              )}
+              {typeF!=='魔法' && typeF!=='陷阱' && availableLevels.length>1 && (
+                <FilterChips label="等級" options={['全部',...availableLevels]} value={levelF} onChange={setLevelF} />
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -689,8 +733,8 @@ function App() {
                 <> · 顯示 <span style={{color:'#D4A843',fontWeight:600}}>{filtered.length}</span> 張</>
               )}
             </span>
-            {(typeF!=='全部'||attrF!=='全部'||raceF!=='全部') && (
-              <button onClick={()=>{setTypeF('全部');setAttrF('全部');setRaceF('全部');}} style={{
+            {(typeF!=='全部'||attrF!=='全部'||raceF!=='全部'||levelF!=='全部'||subTypeF!=='全部') && (
+              <button onClick={clearFilters} style={{
                 background:'transparent',border:'none',color:'rgba(212,168,67,0.6)',
                 fontSize:11,cursor:'pointer',fontFamily:'inherit',padding:0,
               }}>清除篩選</button>

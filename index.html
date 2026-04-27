@@ -89,8 +89,8 @@ body {
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ═══ Bitmask constants (salix5 / ygocdb) ══════════════════════════ */
-const T_SPELL=0x2, T_TRAP=0x4, T_NORMAL=0x10, T_FUSION=0x40, T_RITUAL=0x80,
-      T_SYNCHRO=0x2000, T_TOKEN=0x4000, T_QUICKPLAY=0x10000, T_CONT=0x20000,
+const T_SPELL=0x2, T_TRAP=0x4, T_NORMAL=0x10, T_EFFECT=0x20, T_FUSION=0x40, T_RITUAL=0x80,
+      T_TUNER=0x1000, T_SYNCHRO=0x2000, T_TOKEN=0x4000, T_QUICKPLAY=0x10000, T_CONT=0x20000,
       T_EQUIP=0x40000, T_FIELD=0x80000, T_COUNTER=0x100000, T_XYZ=0x800000,
       T_PENDULUM=0x1000000, T_LINK=0x4000000;
 
@@ -121,7 +121,6 @@ const EN_RACE_MAP = {
   'Wyrm':'幻龍族','Illusion':'幻想魔族',
 };
 
-// Bitmask → ZH (for salix5 / ygocdb)
 const BIT_ATTR = {0x01:'地',0x02:'水',0x04:'炎',0x08:'風',0x10:'光',0x20:'闇',0x40:'神'};
 const BIT_RACE = {
   0x1:'戰士族',0x2:'魔法使族',0x4:'天使族',0x8:'惡魔族',
@@ -148,6 +147,27 @@ const TYPE_THEME = {
   '技能卡':   { bg:'rgba(0,60,100,0.4)',    dot:'#0090C0', label:'#20B0E0' },
 };
 const DEFAULT_THEME = { bg:'rgba(50,50,60,0.35)', dot:'#606070', label:'#8080A0' };
+const TUNER_THEME   = { bg:'rgba(20,100,50,0.3)',  dot:'#30C070', label:'#50D888' };
+const BAN_THEME = {
+  '禁止':  { bg:'rgba(180,20,20,0.25)',  border:'rgba(200,40,40,0.5)',  color:'#FF6060' },
+  '限制':  { bg:'rgba(180,90,10,0.25)',  border:'rgba(200,120,20,0.5)', color:'#FFA040' },
+  '準限制':{ bg:'rgba(160,140,10,0.25)', border:'rgba(190,170,20,0.5)', color:'#EED040' },
+};
+
+/* Sub-type display colors */
+const MONSTER_SUB_COLOR = {
+  '通常': TYPE_THEME['通常怪獸'].label,
+  '效果': TYPE_THEME['效果怪獸'].label,
+  '融合': TYPE_THEME['融合怪獸'].label,
+  '同步': TYPE_THEME['同步怪獸'].label,
+  '超量': TYPE_THEME['超量怪獸'].label,
+  '連結': TYPE_THEME['連結怪獸'].label,
+  '儀式': TYPE_THEME['儀式怪獸'].label,
+  '靈擺': TYPE_THEME['靈擺怪獸'].label,
+};
+const SPELL_SUB_COLOR  = { '通常':'#20C0B0','速攻':'#40D8A0','永續':'#30A8C0','裝備':'#60C0D8','場地':'#20D090' };
+const TRAP_SUB_COLOR   = { '通常':'#E020A0','永續':'#C040B0','反擊':'#F040C0' };
+const TYPE_GROUP_COLOR = { '怪獸':'#E8803A','魔法':'#20C0B0','陷阱':'#E020A0' };
 
 const ATTR_VISUAL = {
   '光': { color:'#F5D060', icon:'☀' },
@@ -159,8 +179,11 @@ const ATTR_VISUAL = {
   '神': { color:'#E8D090', icon:'⚡' },
 };
 
-const ALL_ATTRS = ['光','闇','炎','水','地','風','神'];
-const TYPE_GROUPS = ['全部','怪獸','魔法','陷阱'];
+const ALL_ATTRS    = ['光','闇','炎','水','地','風','神'];
+const TYPE_GROUPS  = ['全部','怪獸','魔法','陷阱'];
+const MONSTER_SUBS = ['通常','效果','融合','同步','超量','連結','儀式','靈擺'];
+const SPELL_SUBS   = ['通常','速攻','永續','裝備','場地'];
+const TRAP_SUBS    = ['通常','永續','反擊'];
 
 /* ═══ Bitmask helpers ═════════════════════════════════════════════ */
 function bitAttrZh(n) { return BIT_ATTR[n] || null; }
@@ -173,14 +196,47 @@ function bitTypeZh(type) {
   if (type & T_SPELL) return '魔法卡';
   if (type & T_TRAP)  return '陷阱卡';
   if (type & T_TOKEN) return '衍生物';
-  if (type & T_LINK)     return '連結怪獸';
-  if (type & T_XYZ)      return type & T_PENDULUM ? '靈擺怪獸' : '超量怪獸';
-  if (type & T_SYNCHRO)  return type & T_PENDULUM ? '靈擺怪獸' : '同步怪獸';
-  if (type & T_FUSION)   return type & T_PENDULUM ? '靈擺怪獸' : '融合怪獸';
-  if (type & T_RITUAL)   return '儀式怪獸';
+  if (type & T_LINK)    return '連結怪獸';
+  if (type & T_XYZ)     return type & T_PENDULUM ? '靈擺怪獸' : '超量怪獸';
+  if (type & T_SYNCHRO) return type & T_PENDULUM ? '靈擺怪獸' : '同步怪獸';
+  if (type & T_FUSION)  return type & T_PENDULUM ? '靈擺怪獸' : '融合怪獸';
+  if (type & T_RITUAL)  return '儀式怪獸';
   if (type & T_PENDULUM) return '靈擺怪獸';
-  if (type & T_NORMAL)   return '通常怪獸';
+  if (type & T_NORMAL)  return '通常怪獸';
   return '效果怪獸';
+}
+function bitTypeLabelsArr(type) {
+  if (!type) return [];
+  if (type & T_SPELL)  return ['魔法卡'];
+  if (type & T_TRAP)   return ['陷阱卡'];
+  if (type & T_TOKEN)  return ['衍生物'];
+  const labels = [];
+  if (type & T_LINK)          labels.push('連結怪獸');
+  else if (type & T_XYZ)      labels.push(type & T_PENDULUM ? '靈擺怪獸' : '超量怪獸');
+  else if (type & T_SYNCHRO)  labels.push(type & T_PENDULUM ? '靈擺怪獸' : '同步怪獸');
+  else if (type & T_FUSION)   labels.push(type & T_PENDULUM ? '靈擺怪獸' : '融合怪獸');
+  else if (type & T_RITUAL)   labels.push('儀式怪獸');
+  else if (type & T_PENDULUM) labels.push('靈擺怪獸');
+  if (type & T_EFFECT)       labels.push('效果怪獸');
+  else if (type & T_NORMAL)  labels.push('通常怪獸');
+  if (type & T_TUNER)        labels.push('調整');
+  return labels.length ? labels : ['效果怪獸'];
+}
+function bitSubTypeZh(type) {
+  if (!type) return null;
+  if (type & T_SPELL) {
+    if (type & T_QUICKPLAY) return '速攻';
+    if (type & T_CONT)      return '永續';
+    if (type & T_EQUIP)     return '裝備';
+    if (type & T_FIELD)     return '場地';
+    return '通常';
+  }
+  if (type & T_TRAP) {
+    if (type & T_COUNTER) return '反擊';
+    if (type & T_CONT)    return '永續';
+    return '通常';
+  }
+  return null;
 }
 
 /* ═══ Language detection ══════════════════════════════════════════ */
@@ -191,9 +247,19 @@ function detectLang(s) {
 }
 
 /* ═══ API ══════════════════════════════════════════════════════════ */
-async function safeFetch(url) {
-  try { const r = await fetch(url); if (!r.ok) return null; return r.json(); }
-  catch { return null; }
+async function safeFetch(url, timeoutMs = 8000) {
+  const ctrl = new AbortController();
+  const tid = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, { signal: ctrl.signal });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('TIMEOUT');
+    return null;
+  } finally {
+    clearTimeout(tid);
+  }
 }
 
 function normArray(d) {
@@ -210,9 +276,11 @@ function parseCard(raw, src) {
 
   let nameZh=null, nameJp=null, nameEn=null,
       typeZh=null, attrZh=null, raceZh=null,
-      descZh=null, descEn=null, level=null;
+      descZh=null, descEn=null, level=null, subTypeZh=null, cid=null,
+      typeLabels=null, banStatus=null;
 
   if (src === 'salix') {
+    cid    = raw.cid ? String(raw.cid) : null;
     nameZh = raw.tw_name || null;
     nameEn = raw.ae_name || raw.en_name || null;
     typeZh = typeof raw.type === 'number' ? bitTypeZh(raw.type) : (EN_TYPE_MAP[raw.type] || null);
@@ -220,8 +288,11 @@ function parseCard(raw, src) {
     raceZh = typeof raw.race === 'number' ? bitRaceZh(raw.race) : (EN_RACE_MAP[raw.race] || null);
     descZh = raw.text?.desc || null;
     level  = raw.level ?? null;
-    if (typeof raw.type === 'number' && (raw.type & T_LINK) && raw.marker)
-      level = popcount(raw.marker);
+    if (typeof raw.type === 'number') {
+      subTypeZh  = bitSubTypeZh(raw.type);
+      typeLabels = bitTypeLabelsArr(raw.type);
+      if ((raw.type & T_LINK) && raw.marker) level = popcount(raw.marker);
+    }
   } else if (src === 'cdb') {
     nameJp = raw.jp_name || null;
     nameEn = raw.en_name || null;
@@ -230,24 +301,30 @@ function parseCard(raw, src) {
     raceZh = typeof raw.race === 'number' ? bitRaceZh(raw.race) : null;
     descZh = raw.text?.tc || raw.text?.sc || null;
     level  = raw.level ?? null;
-    if (typeof raw.type === 'number' && (raw.type & T_LINK) && raw.marker)
-      level = popcount(raw.marker);
-  } else { // ygopro
+    if (typeof raw.type === 'number') {
+      subTypeZh  = bitSubTypeZh(raw.type);
+      typeLabels = bitTypeLabelsArr(raw.type);
+      if ((raw.type & T_LINK) && raw.marker) level = popcount(raw.marker);
+    }
+  } else {
     nameEn = raw.name || null;
     typeZh = EN_TYPE_MAP[raw.type] || null;
     attrZh = EN_ATTR_MAP[raw.attribute] || null;
     raceZh = EN_RACE_MAP[raw.race] || null;
     descEn = raw.desc || null;
     level  = raw.level ?? raw.rank ?? raw.linkval ?? null;
+    const BAN_MAP = { 'Forbidden':'禁止', 'Limited':'限制', 'Semi-Limited':'準限制' };
+    banStatus = BAN_MAP[raw.banlist_info?.ban_ocg] || null;
   }
+
+  typeLabels = typeLabels || (typeZh ? [typeZh] : []);
 
   return {
     id: String(id),
     nameZh, nameJp, nameEn, typeZh, attrZh, raceZh,
-    atk:    raw.atk  !== undefined ? raw.atk  : null,
-    def:    raw.def  !== undefined ? raw.def  : null,
-    level,
-    descZh, descEn,
+    atk:       raw.atk !== undefined ? raw.atk : null,
+    def:       raw.def !== undefined ? raw.def : null,
+    level, subTypeZh, descZh, descEn, cid, typeLabels, banStatus,
     fromJp: src === 'cdb',
   };
 }
@@ -256,7 +333,14 @@ async function searchCards(query) {
   const lang = detectLang(query);
 
   if (lang === 'ja') {
-    const raw = await safeFetch(`https://ygocdb.com/api/v0/?search=${encodeURIComponent(query)}`);
+    let raw;
+    try {
+      raw = await safeFetch(`https://ygocdb.com/api/v0/?search=${encodeURIComponent(query)}`);
+    } catch (e) {
+      if (e.message === 'TIMEOUT') throw new Error('YGOCDB 連線逾時，請稍後再試');
+      throw new Error('YGOCDB 連線失敗，請稍後再試');
+    }
+    if (raw === null) throw new Error('YGOCDB 回應異常，請稍後再試');
     const byId = new Map();
     for (const r of normArray(raw)) {
       const c = parseCard(r, 'cdb');
@@ -269,7 +353,7 @@ async function searchCards(query) {
   const sp = isCN ? `cardname=${encodeURIComponent(query)}` : `en_name=${encodeURIComponent(query)}`;
   const [salixRaw, proRaw] = await Promise.all([
     safeFetch(`https://salix5.up.railway.app/query/?${sp}`),
-    safeFetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(query)}`),
+    safeFetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(query)}&misc=yes`),
   ]);
 
   const byId = new Map();
@@ -284,29 +368,66 @@ async function searchCards(query) {
       const ex = byId.get(c.id);
       byId.set(c.id, {
         ...ex,
-        nameEn: ex.nameEn ?? c.nameEn,
-        typeZh: ex.typeZh || c.typeZh,
-        attrZh: ex.attrZh ?? c.attrZh,
-        raceZh: ex.raceZh ?? c.raceZh,
+        nameEn:     ex.nameEn ?? c.nameEn,
+        typeZh:     ex.typeZh || c.typeZh,
+        typeLabels: ex.typeLabels?.length ? ex.typeLabels : c.typeLabels,
+        attrZh:     ex.attrZh ?? c.attrZh,
+        raceZh:     ex.raceZh ?? c.raceZh,
         atk: ex.atk ?? c.atk, def: ex.def ?? c.def,
-        level: ex.level ?? c.level,
-        descEn: ex.descEn ?? c.descEn,
+        level:      ex.level ?? c.level,
+        descEn:     ex.descEn ?? c.descEn,
+        banStatus:  c.banStatus || ex.banStatus,
       });
     } else {
       byId.set(c.id, c);
     }
   }
-  return [...byId.values()];
-}
 
-function loadScript(src) {
-  return new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = src;
-    s.onload = resolve;
-    s.onerror = () => reject(new Error('無法載入：' + src));
-    document.head.appendChild(s);
-  });
+  // Enrich English-only cards: re-query salix5 by exact en_name to get TC data
+  const missing = [...byId.values()].filter(c => !c.nameZh && c.nameEn);
+  if (missing.length) {
+    const hits = await Promise.allSettled(
+      missing.slice(0, 15).map(c =>
+        safeFetch(`https://salix5.up.railway.app/query/?en_name=${encodeURIComponent(c.nameEn)}`)
+          .catch(() => null)
+      )
+    );
+    missing.slice(0, 15).forEach((card, i) => {
+      const res = hits[i];
+      if (res.status !== 'fulfilled' || !res.value) return;
+      const match = normArray(res.value).find(
+        x => String(x.id ?? x.passcode ?? x.card_id) === card.id
+      );
+      if (!match) return;
+      const patch = parseCard(match, 'salix');
+      if (patch) byId.set(card.id, {
+        ...card, ...patch,
+        id:         card.id,
+        nameEn:     card.nameEn || patch.nameEn,
+        cid:        patch.cid || card.cid,
+        banStatus:  card.banStatus || patch.banStatus,
+      });
+    });
+  }
+
+  // Batch fetch ban status for cards still missing it (e.g. Chinese search hits salix5 only)
+  const BAN_MAP_BATCH = { 'Forbidden':'禁止', 'Limited':'限制', 'Semi-Limited':'準限制' };
+  const needsBan = [...byId.values()].filter(c => !c.banStatus);
+  if (needsBan.length) {
+    const ids = needsBan.slice(0, 50).map(c => c.id).join(',');
+    const banRaw = await safeFetch(
+      `https://db.ygoprodeck.com/api/v7/cardinfo.php?id=${ids}&misc=yes`
+    ).catch(() => null);
+    for (const r of normArray(banRaw)) {
+      const bs = BAN_MAP_BATCH[r.banlist_info?.ban_ocg] || null;
+      if (!bs) continue;
+      const id = String(r.id ?? r.passcode);
+      const ex = byId.get(id);
+      if (ex) byId.set(id, { ...ex, banStatus: bs });
+    }
+  }
+
+  return [...byId.values()];
 }
 
 /* ═══ Components ══════════════════════════════════════════════════ */
@@ -326,18 +447,45 @@ function CardImg({ id, w, h, radius=8 }) {
   );
 }
 
-function TypePill({ typeZh }) {
-  const t = TYPE_THEME[typeZh] || DEFAULT_THEME;
+function TypePill({ typeLabels }) {
+  if (!typeLabels?.length) return null;
   return (
-    <span style={{
-      display:'inline-flex',alignItems:'center',gap:4,
-      padding:'2px 9px',borderRadius:99,
-      background:t.bg,fontSize:11,fontWeight:600,
-      color:t.label,letterSpacing:'0.02em',whiteSpace:'nowrap',
-      border:`1px solid ${t.dot}33`,
+    <span style={{display:'inline-flex',alignItems:'center',gap:4,flexWrap:'wrap'}}>
+      {typeLabels.map(label => {
+        const t = label === '調整' ? TUNER_THEME : (TYPE_THEME[label] || DEFAULT_THEME);
+        return (
+          <span key={label} style={{
+            display:'inline-flex',alignItems:'center',gap:4,
+            padding:'2px 9px',borderRadius:99,
+            background:t.bg,fontSize:11,fontWeight:600,
+            color:t.label,letterSpacing:'0.02em',whiteSpace:'nowrap',
+            border:`1px solid ${t.dot}33`,
+          }}>
+            <span style={{width:5,height:5,borderRadius:'50%',background:t.dot,flexShrink:0}} />
+            {label}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+const BAN_NUM = { '禁止':0, '限制':1, '準限制':2 };
+function BanBadge({ status }) {
+  if (!status) return null;
+  const s = BAN_THEME[status];
+  if (!s) return null;
+  const num = BAN_NUM[status];
+  return (
+    <span title={status} style={{
+      display:'inline-flex',alignItems:'center',justifyContent:'center',
+      width:22,height:22,borderRadius:'50%',flexShrink:0,flexGrow:0,
+      background:s.color + '28',
+      border:`1.5px solid ${s.color}`,
     }}>
-      <span style={{width:5,height:5,borderRadius:'50%',background:t.dot,flexShrink:0}} />
-      {typeZh || '未知'}
+      <span style={{
+        fontSize:12,fontWeight:900,color:s.color,lineHeight:1,
+        textShadow:`0 0 6px ${s.color}88`,
+      }}>{num}</span>
     </span>
   );
 }
@@ -384,15 +532,16 @@ function CardRow({ card, onClick, delay }) {
       <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',gap:5,paddingTop:2}}>
         <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:6}}>
           <div style={{minWidth:0}}>
-            <div style={{fontSize:14,fontWeight:700,color:'#E8C86A',lineHeight:1.3,display:'flex',alignItems:'center',gap:5,minWidth:0}}>
+            <div style={{fontSize:14,fontWeight:700,color:'#E8C86A',lineHeight:1.3,display:'flex',alignItems:'center',gap:5,minWidth:0,flexWrap:'wrap'}}>
               <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{displayName}</span>
               {card.fromJp && !card.nameZh && <JpTag />}
+              <BanBadge status={card.banStatus} />
             </div>
             {subName && <div style={{fontSize:11,color:'rgba(255,255,255,0.3)',marginTop:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{subName}</div>}
           </div>
           {av && <span style={{fontSize:13,flexShrink:0,opacity:0.85}}>{av.icon}</span>}
         </div>
-        <TypePill typeZh={card.typeZh} />
+        <TypePill typeLabels={card.typeLabels} />
         <div style={{display:'flex',gap:4,flexWrap:'wrap',marginTop:1}}>
           {card.raceZh && <Stat label={card.raceZh} />}
           {isM && card.atk!==null && <Stat label="ATK " val={card.atk} color="rgba(255,160,80,0.9)" />}
@@ -453,10 +602,11 @@ function Sheet({ card, onClose }) {
               <div style={{fontSize:17,fontWeight:700,color:'#E8C86A',lineHeight:1.35,display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
                 {displayName}
                 {card.fromJp && !card.nameZh && <JpTag />}
+                <BanBadge status={card.banStatus} />
               </div>
               {subName && <div style={{fontSize:12,color:'rgba(255,255,255,0.35)',marginTop:3,lineHeight:1.4}}>{subName}</div>}
             </div>
-            <TypePill typeZh={card.typeZh} />
+            <TypePill typeLabels={card.typeLabels} />
             {av && (
               <div style={{display:'flex',alignItems:'center',gap:6}}>
                 <span style={{fontSize:16}}>{av.icon}</span>
@@ -482,9 +632,47 @@ function Sheet({ card, onClose }) {
             )}
           </div>
         </div>
-        <div style={{padding:'20px 20px 40px'}}>
+        <div style={{padding:'20px 20px 0'}}>
           <div style={{fontSize:11,color:'rgba(255,255,255,0.3)',letterSpacing:'0.08em',fontWeight:600,marginBottom:10}}>效果 / 說明</div>
           <div style={{fontSize:13,lineHeight:1.9,color:'rgba(255,255,255,0.75)',whiteSpace:'pre-wrap'}}>{desc}</div>
+        </div>
+        <div style={{padding:'16px 20px 40px',display:'flex',gap:8}}>
+          <a
+            href={`https://ygoprodeck.com/card-database/?&cardid=${card.id}`}
+            target="_blank" rel="noopener noreferrer"
+            style={{
+              flex:1,minHeight:44,borderRadius:10,
+              border:'1px solid rgba(100,160,255,0.25)',
+              background:'rgba(100,160,255,0.06)',
+              color:'rgba(100,160,255,0.8)',
+              fontSize:12,fontWeight:600,fontFamily:'inherit',
+              display:'flex',alignItems:'center',justifyContent:'center',gap:6,
+              textDecoration:'none',transition:'all 0.15s',
+            }}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor='rgba(100,160,255,0.5)';e.currentTarget.style.background='rgba(100,160,255,0.12)';}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor='rgba(100,160,255,0.25)';e.currentTarget.style.background='rgba(100,160,255,0.06)';}}
+          >
+            <span style={{fontSize:14}}>🔗</span> YGOPRODeck
+          </a>
+          {card.cid && (
+            <a
+              href={`https://www.db.yugioh-card.com/yugiohdb/card_search.action?ope=2&cid=${card.cid}&request_locale=tc`}
+              target="_blank" rel="noopener noreferrer"
+              style={{
+                flex:1,minHeight:44,borderRadius:10,
+                border:'1px solid rgba(212,168,67,0.25)',
+                background:'rgba(212,168,67,0.06)',
+                color:'rgba(212,168,67,0.8)',
+                fontSize:12,fontWeight:600,fontFamily:'inherit',
+                display:'flex',alignItems:'center',justifyContent:'center',gap:6,
+                textDecoration:'none',transition:'all 0.15s',
+              }}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor='rgba(212,168,67,0.5)';e.currentTarget.style.background='rgba(212,168,67,0.12)';}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor='rgba(212,168,67,0.25)';e.currentTarget.style.background='rgba(212,168,67,0.06)';}}
+            >
+              <span style={{fontSize:14}}>🔗</span> 官方 DB
+            </a>
+          )}
         </div>
       </div>
     </div>
@@ -497,17 +685,19 @@ function FilterChips({ label, options, value, onChange, colorFn }) {
       <div style={{fontSize:10,color:'rgba(255,255,255,0.3)',letterSpacing:'0.08em',fontWeight:600,padding:'0 16px',marginBottom:6}}>{label}</div>
       <div className="hscroll" style={{padding:'0 16px 2px',display:'flex',gap:6}}>
         {options.map(o => {
-          const active = value===o;
+          const active = value === o;
           const col = colorFn ? colorFn(o) : null;
           return (
             <button key={o} onClick={() => onChange(o)} style={{
-              padding:'7px 14px',borderRadius:99,
+              minHeight:44,
+              padding:'0 16px',borderRadius:99,
               border: active ? `1px solid ${col||'rgba(212,168,67,0.6)'}` : '1px solid rgba(255,255,255,0.08)',
               background: active ? (col?`${col}22`:'rgba(212,168,67,0.12)') : 'rgba(255,255,255,0.04)',
               color: active ? (col||'#D4A843') : 'rgba(255,255,255,0.45)',
-              fontSize:12,fontWeight:active?600:400,
+              fontSize:13,fontWeight:active?600:400,
               cursor:'pointer',fontFamily:'inherit',
               transition:'all 0.15s',whiteSpace:'nowrap',flexShrink:0,
+              display:'flex',alignItems:'center',
             }}>{o}</button>
           );
         })}
@@ -535,62 +725,39 @@ function SkeletonRow() {
 
 /* ═══ App ══════════════════════════════════════════════════════════ */
 function App() {
-  const [query, setQuery]     = useState('');
+  const [query, setQuery]       = useState('');
   const [allCards, setAllCards] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState(null);
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState(null);
   const [searched, setSearched] = useState(false);
-  const [sheet, setSheet]     = useState(null);
-  const [typeF, setTypeF]     = useState('全部');
-  const [attrF, setAttrF]     = useState('全部');
-  const [raceF, setRaceF]     = useState('全部');
-  const [ocrMsg, setOcrMsg]   = useState(null);
-  const [ocrBusy, setOcrBusy] = useState(false);
+  const [sheet, setSheet]       = useState(null);
+  const [typeF, setTypeF]       = useState('全部');
+  const [subTypeF, setSubTypeF] = useState('全部');
+  const [attrF, setAttrF]       = useState('全部');
+  const [raceF, setRaceF]       = useState('全部');
+  const [filtersOpen, setFiltersOpen] = useState(true);
   const inputRef = useRef(null);
-  const ocrRef   = useRef(null);
+
+  const resetFilters = () => { setTypeF('全部'); setSubTypeF('全部'); setAttrF('全部'); setRaceF('全部'); };
 
   const doSearch = useCallback(async (q) => {
     const t = (q ?? query).trim();
     if (!t) return;
     setLoading(true); setError(null); setAllCards([]);
-    setSearched(true); setTypeF('全部'); setAttrF('全部'); setRaceF('全部');
-    setOcrMsg(null);
+    setSearched(true); resetFilters();
     try {
       const res = await searchCards(t);
       setAllCards(res);
+      if (res.length > 0) setFiltersOpen(false);
       if (!res.length) setError('找不到符合的卡片');
     } catch { setError('搜尋時發生錯誤'); }
     finally { setLoading(false); }
   }, [query]);
 
-  async function handleOcr(file) {
-    setOcrBusy(true);
-    setOcrMsg('載入 OCR 引擎（首次約需下載 10–30 MB）…');
-    setError(null);
-    try {
-      if (!window.Tesseract) {
-        await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
-      }
-      setOcrMsg('OCR 辨識中… 0%');
-      const { data: { text } } = await window.Tesseract.recognize(file, 'jpn', {
-        logger: m => {
-          if (m.status === 'recognizing text')
-            setOcrMsg(`OCR 辨識中… ${Math.round(m.progress*100)}%`);
-        },
-      });
-      const name = text.split('\n').map(l=>l.trim()).filter(Boolean)[0] || text.trim();
-      if (!name) { setOcrMsg(null); setError('無法辨識文字，請嘗試更清晰的圖片'); return; }
-      setQuery(name);
-      setOcrMsg(`辨識結果：「${name}」`);
-      doSearch(name);
-    } catch (err) {
-      setOcrMsg(null); setError(`OCR 失敗：${err.message}`);
-    } finally { setOcrBusy(false); }
-  }
-
+  /* ── Available filter options ── */
   const availableAttrs = useMemo(() => {
     const s = new Set(allCards.map(c=>c.attrZh).filter(Boolean));
-    return ALL_ATTRS.filter(a=>s.has(a));
+    return ALL_ATTRS.filter(a => s.has(a));
   }, [allCards]);
 
   const availableRaces = useMemo(() => {
@@ -598,12 +765,32 @@ function App() {
     return [...s].sort();
   }, [allCards]);
 
-  const attrOptions = useMemo(() =>
+  const availableMonsterSubs = useMemo(() => {
+    const s = new Set(
+      allCards
+        .filter(c => c.typeZh && !['魔法卡','陷阱卡','衍生物','技能卡'].includes(c.typeZh))
+        .map(c => c.typeZh?.replace('怪獸',''))
+        .filter(Boolean)
+    );
+    return MONSTER_SUBS.filter(t => s.has(t));
+  }, [allCards]);
+
+  const availableSpellSubs = useMemo(() => {
+    const s = new Set(allCards.filter(c => c.typeZh==='魔法卡' && c.subTypeZh).map(c => c.subTypeZh));
+    return SPELL_SUBS.filter(t => s.has(t));
+  }, [allCards]);
+
+  const availableTrapSubs = useMemo(() => {
+    const s = new Set(allCards.filter(c => c.typeZh==='陷阱卡' && c.subTypeZh).map(c => c.subTypeZh));
+    return TRAP_SUBS.filter(t => s.has(t));
+  }, [allCards]);
+
+  const attrOptions  = useMemo(() =>
     searched && availableAttrs.length ? ['全部',...availableAttrs] : ['全部',...ALL_ATTRS],
   [searched, availableAttrs]);
+  const raceOptions  = useMemo(() => ['全部',...availableRaces], [availableRaces]);
 
-  const raceOptions = useMemo(() => ['全部',...availableRaces], [availableRaces]);
-
+  /* ── Filtered results ── */
   const filtered = useMemo(() => allCards.filter(c => {
     const isM = c.typeZh && !['魔法卡','陷阱卡','衍生物','技能卡'].includes(c.typeZh);
     if (typeF==='怪獸' && !isM) return false;
@@ -611,9 +798,17 @@ function App() {
     if (typeF==='陷阱' && c.typeZh!=='陷阱卡') return false;
     if (attrF!=='全部' && c.attrZh!==attrF) return false;
     if (raceF!=='全部' && c.raceZh!==raceF) return false;
+    if (subTypeF !== '全部') {
+      if (typeF==='魔法' || typeF==='陷阱') {
+        if (c.subTypeZh !== subTypeF) return false;
+      } else if (typeF==='怪獸') {
+        if (c.typeZh?.replace('怪獸','') !== subTypeF) return false;
+      }
+    }
     return true;
-  }), [allCards, typeF, attrF, raceF]);
+  }), [allCards, typeF, subTypeF, attrF, raceF]);
 
+  const hasFilter = typeF!=='全部' || subTypeF!=='全部' || attrF!=='全部' || raceF!=='全部';
   const suggestions = ['青眼白龍','黑魔術師','Blue-Eyes','Dark Magician','Dragon'];
 
   return (
@@ -644,7 +839,7 @@ function App() {
               onKeyDown={e=>e.key==='Enter'&&doSearch()}
               placeholder="輸入卡名（中文／英文／日文）…"
               style={{
-                width:'100%',padding:'11px 12px 11px 36px',
+                width:'100%',minHeight:48,padding:'0 12px 0 38px',
                 borderRadius:12,border:'1px solid rgba(255,255,255,0.1)',
                 background:'rgba(255,255,255,0.06)',
                 color:'rgba(255,255,255,0.9)',fontSize:14,fontFamily:'inherit',
@@ -654,61 +849,76 @@ function App() {
               onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.1)'}
             />
             {query && (
-              <button onClick={()=>{setQuery('');setAllCards([]);setSearched(false);setError(null);setOcrMsg(null);}} style={{
-                position:'absolute',right:10,background:'transparent',border:'none',
-                color:'rgba(255,255,255,0.3)',fontSize:16,cursor:'pointer',padding:4,
-                display:'flex',alignItems:'center',
+              <button onClick={()=>{setQuery('');setAllCards([]);setSearched(false);setError(null);}} style={{
+                position:'absolute',right:0,
+                minWidth:44,minHeight:48,
+                background:'transparent',border:'none',
+                color:'rgba(255,255,255,0.3)',fontSize:16,cursor:'pointer',
+                display:'flex',alignItems:'center',justifyContent:'center',
               }}>✕</button>
             )}
           </div>
-          {/* OCR */}
-          <button
-            onClick={()=>ocrRef.current?.click()}
-            disabled={ocrBusy}
-            title="拍照或上傳卡片圖片（OCR 辨識日文卡名）"
-            style={{
-              padding:'11px 12px',borderRadius:12,
-              border:'1px solid rgba(255,255,255,0.1)',
-              background:ocrBusy?'rgba(255,255,255,0.03)':'rgba(255,255,255,0.06)',
-              color:ocrBusy?'rgba(255,255,255,0.3)':'rgba(255,255,255,0.7)',
-              fontSize:16,cursor:ocrBusy?'wait':'pointer',
-              fontFamily:'inherit',transition:'all 0.15s',flexShrink:0,
-              display:'flex',alignItems:'center',
-            }}
-          >{ocrBusy?'⏳':'📷'}</button>
-          <input ref={ocrRef} type="file" accept="image/*" style={{display:'none'}}
-            onChange={e=>{const f=e.target.files[0];if(f){e.target.value='';handleOcr(f);}}} />
           {/* Search */}
           <button
             onClick={()=>doSearch()}
             disabled={loading||!query.trim()}
             style={{
-              padding:'11px 18px',borderRadius:12,
+              minHeight:48,padding:'0 20px',borderRadius:12,
               border:'1px solid rgba(212,168,67,0.4)',
               background:(loading||!query.trim())?'rgba(212,168,67,0.05)':'rgba(212,168,67,0.15)',
               color:(loading||!query.trim())?'rgba(212,168,67,0.35)':'#D4A843',
-              fontSize:13,fontWeight:600,
+              fontSize:14,fontWeight:600,
               cursor:(loading||!query.trim())?'not-allowed':'pointer',
               fontFamily:'inherit',transition:'all 0.15s',whiteSpace:'nowrap',flexShrink:0,
             }}
           >{loading?'…':'搜尋'}</button>
         </div>
 
-        {/* OCR status */}
-        {ocrMsg && (
-          <div style={{padding:'2px 16px 8px',fontSize:12,color:'rgba(212,168,67,0.8)',display:'flex',alignItems:'center',gap:6}}>
-            <span style={{display:'inline-block',width:8,height:8,borderRadius:'50%',border:'2px solid rgba(212,168,67,0.5)',borderTopColor:'transparent',animation:'spin 0.8s linear infinite',flexShrink:0}} />
-            {ocrMsg}
-          </div>
-        )}
-
         {/* Filters */}
-        <div style={{display:'flex',flexDirection:'column',gap:10,paddingBottom:10}}>
-          <FilterChips label="卡種" options={TYPE_GROUPS} value={typeF} onChange={setTypeF} />
-          <FilterChips label="屬性" options={attrOptions} value={attrF} onChange={setAttrF}
-            colorFn={o => ATTR_VISUAL[o]?.color} />
-          {searched && availableRaces.length>1 && (
-            <FilterChips label="種族" options={raceOptions} value={raceF} onChange={setRaceF} />
+        <div>
+          {/* Toggle bar */}
+          <button onClick={() => setFiltersOpen(o => !o)} style={{
+            width:'100%',display:'flex',alignItems:'center',gap:8,
+            padding:'4px 16px 8px',background:'transparent',border:'none',cursor:'pointer',
+            fontFamily:'inherit',
+          }}>
+            <span style={{fontSize:10,color:'rgba(255,255,255,0.3)',letterSpacing:'0.08em',fontWeight:600}}>篩選</span>
+            {hasFilter && (
+              <span style={{display:'flex',gap:4,flex:1,flexWrap:'wrap'}}>
+                {typeF!=='全部' && <span style={{fontSize:10,color:TYPE_GROUP_COLOR[typeF]||'#D4A843',fontWeight:600}}>{typeF}</span>}
+                {subTypeF!=='全部' && <span style={{fontSize:10,color:'rgba(212,168,67,0.7)',fontWeight:600}}>· {subTypeF}</span>}
+                {attrF!=='全部' && <span style={{fontSize:10,color:ATTR_VISUAL[attrF]?.color||'rgba(255,255,255,0.5)',fontWeight:600}}>· {attrF}</span>}
+                {raceF!=='全部' && <span style={{fontSize:10,color:'rgba(255,255,255,0.5)',fontWeight:600}}>· {raceF}</span>}
+              </span>
+            )}
+            {!hasFilter && <span style={{flex:1}} />}
+            <span style={{fontSize:9,color:'rgba(255,255,255,0.2)',transition:'transform 0.2s',display:'inline-block',transform:filtersOpen?'rotate(180deg)':'rotate(0deg)'}}>▲</span>
+          </button>
+
+          {/* Chips */}
+          {filtersOpen && (
+            <div style={{display:'flex',flexDirection:'column',gap:10,paddingBottom:10}}>
+              <FilterChips label="卡種" options={TYPE_GROUPS} value={typeF}
+                onChange={v => { setTypeF(v); setSubTypeF('全部'); }}
+                colorFn={o => TYPE_GROUP_COLOR[o]} />
+              {searched && typeF==='怪獸' && availableMonsterSubs.length > 1 && (
+                <FilterChips label="怪獸類型" options={['全部',...availableMonsterSubs]} value={subTypeF}
+                  onChange={setSubTypeF} colorFn={o => MONSTER_SUB_COLOR[o]} />
+              )}
+              {searched && typeF==='魔法' && availableSpellSubs.length > 1 && (
+                <FilterChips label="魔法類型" options={['全部',...availableSpellSubs]} value={subTypeF}
+                  onChange={setSubTypeF} colorFn={o => SPELL_SUB_COLOR[o]} />
+              )}
+              {searched && typeF==='陷阱' && availableTrapSubs.length > 1 && (
+                <FilterChips label="陷阱類型" options={['全部',...availableTrapSubs]} value={subTypeF}
+                  onChange={setSubTypeF} colorFn={o => TRAP_SUB_COLOR[o]} />
+              )}
+              <FilterChips label="屬性" options={attrOptions} value={attrF} onChange={setAttrF}
+                colorFn={o => ATTR_VISUAL[o]?.color} />
+              {searched && availableRaces.length > 1 && (
+                <FilterChips label="種族" options={raceOptions} value={raceF} onChange={setRaceF} />
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -721,11 +931,12 @@ function App() {
             <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
               {suggestions.map(s=>(
                 <button key={s} onClick={()=>{setQuery(s);doSearch(s);}} style={{
-                  padding:'8px 16px',borderRadius:99,
+                  minHeight:44,padding:'0 18px',borderRadius:99,
                   border:'1px solid rgba(255,255,255,0.08)',
                   background:'rgba(255,255,255,0.04)',
                   color:'rgba(255,255,255,0.5)',
-                  fontSize:13,cursor:'pointer',fontFamily:'inherit',transition:'all 0.15s',
+                  fontSize:14,cursor:'pointer',fontFamily:'inherit',transition:'all 0.15s',
+                  display:'flex',alignItems:'center',
                 }}
                 onMouseEnter={e=>{e.currentTarget.style.borderColor='rgba(212,168,67,0.4)';e.currentTarget.style.color='#D4A843';}}
                 onMouseLeave={e=>{e.currentTarget.style.borderColor='rgba(255,255,255,0.08)';e.currentTarget.style.color='rgba(255,255,255,0.5)';}}
@@ -753,10 +964,14 @@ function App() {
                 <> · 顯示 <span style={{color:'#D4A843',fontWeight:600}}>{filtered.length}</span> 張</>
               )}
             </span>
-            {(typeF!=='全部'||attrF!=='全部'||raceF!=='全部') && (
-              <button onClick={()=>{setTypeF('全部');setAttrF('全部');setRaceF('全部');}} style={{
-                background:'transparent',border:'none',color:'rgba(212,168,67,0.6)',
-                fontSize:11,cursor:'pointer',fontFamily:'inherit',padding:0,
+            {hasFilter && (
+              <button onClick={resetFilters} style={{
+                minHeight:36,padding:'0 12px',borderRadius:99,
+                border:'1px solid rgba(212,168,67,0.3)',
+                background:'rgba(212,168,67,0.08)',
+                color:'rgba(212,168,67,0.7)',
+                fontSize:11,cursor:'pointer',fontFamily:'inherit',
+                display:'flex',alignItems:'center',
               }}>清除篩選</button>
             )}
           </div>

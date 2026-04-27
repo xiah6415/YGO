@@ -506,6 +506,32 @@ function FilterChips({ label, options, value, onChange, colorFn }) {
   );
 }
 
+function RangeFilter({ label, min, max, onMin, onMax }) {
+  const inputStyle = {
+    width:80, padding:'6px 8px', borderRadius:8,
+    border:'1px solid rgba(255,255,255,0.1)',
+    background:'rgba(255,255,255,0.06)',
+    color:'rgba(255,255,255,0.9)', fontSize:12,
+    fontFamily:'inherit', outline:'none',
+  };
+  return (
+    <div style={{padding:'0 16px'}}>
+      <div style={{fontSize:10,color:'rgba(255,255,255,0.3)',letterSpacing:'0.08em',fontWeight:600,marginBottom:6}}>{label}</div>
+      <div style={{display:'flex',alignItems:'center',gap:6}}>
+        <input type="number" placeholder="最小" value={min} onChange={e=>onMin(e.target.value)}
+          style={inputStyle}
+          onFocus={e=>e.target.style.borderColor='rgba(212,168,67,0.5)'}
+          onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.1)'} />
+        <span style={{color:'rgba(255,255,255,0.3)',fontSize:12}}>—</span>
+        <input type="number" placeholder="最大" value={max} onChange={e=>onMax(e.target.value)}
+          style={inputStyle}
+          onFocus={e=>e.target.style.borderColor='rgba(212,168,67,0.5)'}
+          onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.1)'} />
+      </div>
+    </div>
+  );
+}
+
 function SkeletonRow() {
   return (
     <div style={{display:'flex',gap:12,padding:'12px 14px',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
@@ -536,17 +562,27 @@ function App() {
   const [raceF, setRaceF]     = useState('全部');
   const [levelF, setLevelF]   = useState('全部');
   const [subTypeF, setSubTypeF] = useState('全部');
+  const [atkMin, setAtkMin]   = useState('');
+  const [atkMax, setAtkMax]   = useState('');
+  const [defMin, setDefMin]   = useState('');
+  const [defMax, setDefMax]   = useState('');
   const [filtersOpen, setFiltersOpen] = useState(true);
   const inputRef = useRef(null);
 
-  const clearFilters = () => { setTypeF('全部'); setAttrF('全部'); setRaceF('全部'); setLevelF('全部'); setSubTypeF('全部'); };
+  const clearFilters = () => {
+    setTypeF('全部'); setAttrF('全部'); setRaceF('全部');
+    setLevelF('全部'); setSubTypeF('全部');
+    setAtkMin(''); setAtkMax(''); setDefMin(''); setDefMax('');
+  };
 
   const doSearch = useCallback(async (q) => {
     const t = (q ?? query).trim();
     if (!t) return;
     setLoading(true); setError(null); setAllCards([]);
     setSearched(true); setFiltersOpen(true);
-    setTypeF('全部'); setAttrF('全部'); setRaceF('全部'); setLevelF('全部'); setSubTypeF('全部');
+    setTypeF('全部'); setAttrF('全部'); setRaceF('全部');
+    setLevelF('全部'); setSubTypeF('全部');
+    setAtkMin(''); setAtkMax(''); setDefMin(''); setDefMax('');
     try {
       const res = await searchCards(t);
       setAllCards(res);
@@ -595,8 +631,12 @@ function App() {
     if (raceF!=='全部' && c.raceZh!==raceF) return false;
     if (subTypeF!=='全部' && c.typeZh!==subTypeF) return false;
     if (levelF!=='全部' && c.level!==levelF) return false;
+    if (atkMin!=='' && (c.atk===null || c.atk < +atkMin)) return false;
+    if (atkMax!=='' && (c.atk===null || c.atk > +atkMax)) return false;
+    if (defMin!=='' && (c.def===null || c.def < +defMin)) return false;
+    if (defMax!=='' && (c.def===null || c.def > +defMax)) return false;
     return true;
-  }), [allCards, typeF, attrF, raceF, subTypeF, levelF]);
+  }), [allCards, typeF, attrF, raceF, subTypeF, levelF, atkMin, atkMax, defMin, defMax]);
 
   const suggestions = ['青眼白龍','黑魔術師','Blue-Eyes','Dark Magician','Dragon'];
 
@@ -685,8 +725,14 @@ function App() {
               {typeF==='怪獸' && availableSubTypes.length>1 && (
                 <FilterChips label="怪獸類型" options={['全部',...availableSubTypes]} value={subTypeF} onChange={setSubTypeF} />
               )}
-              {typeF!=='魔法' && typeF!=='陷阱' && availableLevels.length>1 && (
-                <FilterChips label="等級" options={['全部',...availableLevels]} value={levelF} onChange={setLevelF} />
+              {availableLevels.length>0 && (
+                <FilterChips label="等級／階級" options={['全部',...availableLevels]} value={levelF} onChange={setLevelF} />
+              )}
+              {typeF!=='魔法' && typeF!=='陷阱' && searched && (
+                <RangeFilter label="攻擊力 ATK" min={atkMin} max={atkMax} onMin={setAtkMin} onMax={setAtkMax} />
+              )}
+              {typeF!=='魔法' && typeF!=='陷阱' && searched && (
+                <RangeFilter label="守備力 DEF" min={defMin} max={defMax} onMin={setDefMin} onMax={setDefMax} />
               )}
             </div>
           )}
@@ -733,7 +779,7 @@ function App() {
                 <> · 顯示 <span style={{color:'#D4A843',fontWeight:600}}>{filtered.length}</span> 張</>
               )}
             </span>
-            {(typeF!=='全部'||attrF!=='全部'||raceF!=='全部'||levelF!=='全部'||subTypeF!=='全部') && (
+            {(typeF!=='全部'||attrF!=='全部'||raceF!=='全部'||levelF!=='全部'||subTypeF!=='全部'||atkMin||atkMax||defMin||defMax) && (
               <button onClick={clearFilters} style={{
                 background:'transparent',border:'none',color:'rgba(212,168,67,0.6)',
                 fontSize:11,cursor:'pointer',fontFamily:'inherit',padding:0,

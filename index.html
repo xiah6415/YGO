@@ -2,7 +2,9 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <title>遊戲王卡片查詢</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
@@ -30,21 +32,25 @@
 html { height: 100%; }
 body {
   min-height: 100%;
+  min-height: -webkit-fill-available;
   background: #06080F;
   font-family: 'Noto Sans TC', 'Inter', sans-serif;
   display: flex;
   justify-content: center;
   overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
 }
 
 #root {
   width: 100%;
   max-width: 480px;
   min-height: 100vh;
+  min-height: -webkit-fill-available;
   background: var(--bg-app);
   position: relative;
   display: flex;
   flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 @media (min-width: 500px) {
@@ -78,8 +84,14 @@ body {
   overflow-x: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
 }
 .hscroll::-webkit-scrollbar { display: none; }
+
+button, input { -webkit-appearance: none; touch-action: manipulation; }
+input[type="number"] { -moz-appearance: textfield; }
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
 </style>
 </head>
 <body>
@@ -491,7 +503,7 @@ function FilterChips({ label, options, value, onChange, colorFn }) {
           const col = colorFn ? colorFn(o) : null;
           return (
             <button key={o} onClick={() => onChange(o)} style={{
-              padding:'7px 14px',borderRadius:99,
+              padding:'8px 14px',borderRadius:99,minHeight:36,
               border: active ? `1px solid ${col||'rgba(212,168,67,0.6)'}` : '1px solid rgba(255,255,255,0.08)',
               background: active ? (col?`${col}22`:'rgba(212,168,67,0.12)') : 'rgba(255,255,255,0.04)',
               color: active ? (col||'#D4A843') : 'rgba(255,255,255,0.45)',
@@ -608,19 +620,23 @@ function App() {
   const raceOptions = useMemo(() => ['全部',...availableRaces], [availableRaces]);
 
   const MONSTER_TYPES = ['通常怪獸','效果怪獸','融合怪獸','同步怪獸','超量怪獸','連結怪獸','儀式怪獸','靈擺怪獸'];
+  const ALL_LEVELS = [1,2,3,4,5,6,7,8,9,10,11,12];
+
   const availableSubTypes = useMemo(() => {
     if (typeF !== '怪獸') return [];
+    if (!searched) return MONSTER_TYPES;
     const s = new Set(allCards.map(c=>c.typeZh).filter(t=>MONSTER_TYPES.includes(t)));
     return MONSTER_TYPES.filter(t=>s.has(t));
-  }, [allCards, typeF]);
+  }, [allCards, typeF, searched]);
 
   const availableLevels = useMemo(() => {
+    if (!searched) return ALL_LEVELS;
     const s = new Set(allCards.filter(c=>{
       const isM = c.typeZh && !['魔法卡','陷阱卡','衍生物','技能卡'].includes(c.typeZh);
       return isM && c.level !== null;
     }).map(c=>c.level));
     return [...s].sort((a,b)=>a-b);
-  }, [allCards]);
+  }, [allCards, searched]);
 
   const filtered = useMemo(() => allCards.filter(c => {
     const isM = c.typeZh && !['魔法卡','陷阱卡','衍生物','技能卡'].includes(c.typeZh);
@@ -667,6 +683,11 @@ function App() {
               onChange={e=>setQuery(e.target.value)}
               onKeyDown={e=>e.key==='Enter'&&doSearch()}
               placeholder="輸入卡名（中文／英文／日文）…"
+              inputMode="search"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck="false"
               style={{
                 width:'100%',padding:'11px 12px 11px 36px',
                 borderRadius:12,border:'1px solid rgba(255,255,255,0.1)',
@@ -719,20 +740,20 @@ function App() {
               <FilterChips label="卡種" options={TYPE_GROUPS} value={typeF} onChange={v=>{setTypeF(v);setSubTypeF('全部');setLevelF('全部');}} />
               <FilterChips label="屬性" options={attrOptions} value={attrF} onChange={setAttrF}
                 colorFn={o => ATTR_VISUAL[o]?.color} />
-              {searched && availableRaces.length>1 && (
-                <FilterChips label="種族" options={raceOptions} value={raceF} onChange={setRaceF} />
-              )}
-              {typeF==='怪獸' && availableSubTypes.length>1 && (
+              {typeF==='怪獸' && (
                 <FilterChips label="怪獸類型" options={['全部',...availableSubTypes]} value={subTypeF} onChange={setSubTypeF} />
               )}
-              {availableLevels.length>0 && (
+              {typeF!=='魔法' && typeF!=='陷阱' && (
                 <FilterChips label="等級／階級" options={['全部',...availableLevels]} value={levelF} onChange={setLevelF} />
               )}
-              {typeF!=='魔法' && typeF!=='陷阱' && searched && (
+              {typeF!=='魔法' && typeF!=='陷阱' && (
                 <RangeFilter label="攻擊力 ATK" min={atkMin} max={atkMax} onMin={setAtkMin} onMax={setAtkMax} />
               )}
-              {typeF!=='魔法' && typeF!=='陷阱' && searched && (
+              {typeF!=='魔法' && typeF!=='陷阱' && (
                 <RangeFilter label="守備力 DEF" min={defMin} max={defMax} onMin={setDefMin} onMax={setDefMax} />
+              )}
+              {searched && availableRaces.length>1 && (
+                <FilterChips label="種族" options={raceOptions} value={raceF} onChange={setRaceF} />
               )}
             </div>
           )}

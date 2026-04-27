@@ -354,6 +354,29 @@ function Stat({ label, val, color }) {
   );
 }
 
+const ATTR_TEXT_COLOR = {
+  '光':'#3A2200','闇':'#fff','炎':'#fff','水':'#fff','地':'#fff','風':'#1A3020','神':'#3A2200',
+};
+
+function AttrBadge({ attrZh, size=22 }) {
+  const av = ATTR_VISUAL[attrZh];
+  if (!av) return null;
+  return (
+    <div style={{
+      width:size, height:size, borderRadius:'50%',
+      background:av.color,
+      display:'flex', alignItems:'center', justifyContent:'center',
+      fontSize:size*0.52, fontWeight:700,
+      color: ATTR_TEXT_COLOR[attrZh] || '#fff',
+      flexShrink:0,
+      boxShadow:`0 0 0 1.5px rgba(255,255,255,0.25), 0 2px 6px ${av.color}66`,
+      userSelect:'none',
+    }}>
+      {attrZh}
+    </div>
+  );
+}
+
 function JpTag() {
   return (
     <span style={{fontSize:9,background:'rgba(30,45,90,0.9)',color:'#7a9fd4',borderRadius:3,padding:'1px 4px',fontWeight:600,flexShrink:0,letterSpacing:'0.04em'}}>
@@ -392,7 +415,7 @@ function CardRow({ card, onClick, delay }) {
             </div>
             {subName && <div style={{fontSize:11,color:'rgba(255,255,255,0.3)',marginTop:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{subName}</div>}
           </div>
-          {av && <span style={{fontSize:13,flexShrink:0,opacity:0.85}}>{av.icon}</span>}
+          {card.attrZh && <AttrBadge attrZh={card.attrZh} size={22} />}
         </div>
         <TypePill typeZh={card.typeZh} />
         <div style={{display:'flex',gap:4,flexWrap:'wrap',marginTop:1}}>
@@ -459,10 +482,9 @@ function Sheet({ card, onClose }) {
               {subName && <div style={{fontSize:12,color:'rgba(255,255,255,0.35)',marginTop:3,lineHeight:1.4}}>{subName}</div>}
             </div>
             <TypePill typeZh={card.typeZh} />
-            {av && (
+            {card.attrZh && (
               <div style={{display:'flex',alignItems:'center',gap:6}}>
-                <span style={{fontSize:16}}>{av.icon}</span>
-                <span style={{fontSize:13,color:av.color,fontWeight:600}}>{card.attrZh}</span>
+                <AttrBadge attrZh={card.attrZh} size={26} />
                 {card.raceZh && <><span style={{color:'rgba(255,255,255,0.3)',fontSize:12}}>·</span><span style={{fontSize:12,color:'rgba(255,255,255,0.5)'}}>{card.raceZh}</span></>}
               </div>
             )}
@@ -493,7 +515,7 @@ function Sheet({ card, onClose }) {
   );
 }
 
-function FilterChips({ label, options, value, onChange, colorFn }) {
+function FilterChips({ label, options, value, onChange, colorFn, renderLabel }) {
   return (
     <div>
       <div style={{fontSize:10,color:'rgba(255,255,255,0.3)',letterSpacing:'0.08em',fontWeight:600,padding:'0 16px',marginBottom:6}}>{label}</div>
@@ -503,14 +525,18 @@ function FilterChips({ label, options, value, onChange, colorFn }) {
           const col = colorFn ? colorFn(o) : null;
           return (
             <button key={o} onClick={() => onChange(o)} style={{
-              padding:'8px 14px',borderRadius:99,minHeight:36,
+              padding: renderLabel ? '4px 10px' : '8px 14px',
+              borderRadius:99,minHeight:36,
+              display:'flex',alignItems:'center',gap:5,
               border: active ? `1px solid ${col||'rgba(212,168,67,0.6)'}` : '1px solid rgba(255,255,255,0.08)',
               background: active ? (col?`${col}22`:'rgba(212,168,67,0.12)') : 'rgba(255,255,255,0.04)',
               color: active ? (col||'#D4A843') : 'rgba(255,255,255,0.45)',
               fontSize:12,fontWeight:active?600:400,
               cursor:'pointer',fontFamily:'inherit',
               transition:'all 0.15s',whiteSpace:'nowrap',flexShrink:0,
-            }}>{o}</button>
+            }}>
+              {renderLabel ? renderLabel(o, active) : o}
+            </button>
           );
         })}
       </div>
@@ -739,7 +765,13 @@ function App() {
             <div style={{display:'flex',flexDirection:'column',gap:10,paddingBottom:10}}>
               <FilterChips label="卡種" options={TYPE_GROUPS} value={typeF} onChange={v=>{setTypeF(v);setSubTypeF('全部');setLevelF('全部');}} />
               <FilterChips label="屬性" options={attrOptions} value={attrF} onChange={setAttrF}
-                colorFn={o => ATTR_VISUAL[o]?.color} />
+                colorFn={o => ATTR_VISUAL[o]?.color}
+                renderLabel={(o, active) => o==='全部' ? '全部' : (
+                  <span style={{display:'flex',alignItems:'center',gap:5}}>
+                    <AttrBadge attrZh={o} size={18} />
+                    <span>{o}</span>
+                  </span>
+                )} />
               {typeF==='怪獸' && (
                 <FilterChips label="怪獸類型" options={['全部',...availableSubTypes]} value={subTypeF} onChange={setSubTypeF} />
               )}

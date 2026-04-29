@@ -837,8 +837,6 @@ function App() {
   [searched, availableAttrs]);
   const raceOptions  = useMemo(() => ['全部',...availableRaces], [availableRaces]);
 
-  const raceOptions = useMemo(() => ['全部',...availableRaces], [availableRaces]);
-
   const filtered = useMemo(() => allCards.filter(c => {
     const isM = c.typeZh && !['魔法卡','陷阱卡','衍生物','技能卡'].includes(c.typeZh);
     if (typeF==='怪獸' && !isM) return false;
@@ -849,7 +847,6 @@ function App() {
     return true;
   }), [allCards, typeF, attrF, raceF]);
 
-  const hasFilter = typeF!=='全部' || subTypeF!=='全部' || attrF!=='全部' || raceF!=='全部';
   const suggestions = ['青眼白龍','黑魔術師','Blue-Eyes','Dark Magician','Dragon'];
 
   return (
